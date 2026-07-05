@@ -38,6 +38,22 @@ DEMO_APPROVERS = [
         slowest_trigger="requests with no explicit recommended action",
         total_deals_reviewed=22,
     ),
+    dict(
+        approver_id="procurement_li",
+        department="Procurement",
+        avg_turnaround_days=5.0,
+        fastest_responding_format="sourcing summary with vendor comparison table",
+        slowest_trigger="custom deals with no named subcontractor/vendor chain",
+        total_deals_reviewed=18,
+    ),
+    dict(
+        approver_id="compliance_maria",
+        department="Compliance",
+        avg_turnaround_days=7.0,
+        fastest_responding_format="regulatory checklist pre-mapped to applicable clauses",
+        slowest_trigger="deals touching new/unreviewed regulatory jurisdictions",
+        total_deals_reviewed=14,
+    ),
 ]
 
 
