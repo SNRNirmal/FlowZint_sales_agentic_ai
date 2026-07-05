@@ -1,0 +1,34 @@
+[
+  {
+    "approver_id": "legal_jane",
+    "department": "Legal",
+    "avg_turnaround_days": 2.1,
+    "fastest_responding_format": "1-page redline summary with risk clause highlighted first",
+    "slowest_trigger": "requests missing security context",
+    "total_deals_reviewed": 47
+  },
+  {
+    "approver_id": "finance_raj",
+    "department": "Finance",
+    "avg_turnaround_days": 4.5,
+    "fastest_responding_format": "full pricing exception form with margin impact table",
+    "slowest_trigger": "discount requests without a comparable-deal reference",
+    "total_deals_reviewed": 63
+  },
+  {
+    "approver_id": "security_amy",
+    "department": "Security",
+    "avg_turnaround_days": 6.0,
+    "fastest_responding_format": "pre-filled security questionnaire with prior answers carried over",
+    "slowest_trigger": "new/unfamiliar data residency requirements",
+    "total_deals_reviewed": 31
+  },
+  {
+    "approver_id": "exec_daniel",
+    "department": "Executive",
+    "avg_turnaround_days": 1.5,
+    "fastest_responding_format": "one-page executive brief with a single clear recommendation",
+    "slowest_trigger": "requests with no explicit recommended action",
+    "total_deals_reviewed": 22
+  }
+]

@@ -1,0 +1,3 @@
+# Runtime-generated LangGraph checkpoint database lives here.
+# This file exists only so the directory is created; the actual
+# checkpoint .db file is gitignored (see backend/.gitignore).
