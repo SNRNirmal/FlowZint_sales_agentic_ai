@@ -72,6 +72,14 @@ class RiskScore(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class HumanReviewDecision(BaseModel):
+    """Captures the output of a Human-in-the-Loop review checkpoint."""
+    action: Literal["approve", "reject", "request_changes"]
+    comments: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
 # ---------------------------------------------------------------------
 # Reducers for list/dict fields that must accumulate across parallel
 # branches rather than being overwritten by whichever node finishes
@@ -108,6 +116,7 @@ class GraphState(BaseModel):
 
     # Human-in-the-loop
     human_decisions: Annotated[dict[str, str], merge_dicts] = Field(default_factory=dict)
+    latest_review: Optional[HumanReviewDecision] = None
 
     # Traceability — append-only audit trail
     audit_log: Annotated[list[dict], add] = Field(default_factory=list)

@@ -1,9 +1,8 @@
-"""Momentum Tool — execution bridge to agents/approval_tracking.py.
+"""Momentum Tool — computes and persists a deal's Deal Momentum Score.
 
-Wraps the existing, unchanged compute_momentum_score / momentum_band
-functions so the Approval Tracker node (Module 7) calls them via the
-same tool-calling contract as every other execution step, instead of
-importing agents/approval_tracking.py directly.
+Self-contained: all business logic lives here. The Approval Tracker
+node (Module 7) calls this tool via the standard tool-calling contract;
+no code in the graph layer imports models or SQLAlchemy directly.
 """
 
 from __future__ import annotations
@@ -23,9 +22,55 @@ from tenacity import (
     before_sleep_log,
 )
 
-from agents.approval_tracking import compute_momentum_score, momentum_band
+from models.deal import Deal
+from models.approval import Approval
 
 logger = logging.getLogger("threshold.tools.momentum")
+
+# ---------------------------------------------------------------------------
+# Business logic (previously in agents/approval_tracking.py)
+# ---------------------------------------------------------------------------
+
+WEIGHTS = {
+    "delay_risk": 15,
+    "pending_approval": 8,
+    "sla_breach": 20,
+    "completed_approval": 10,
+    "proactive_action": 5,
+}
+
+
+def compute_momentum_score(db: Session, deal_id: str) -> int:
+    """Recompute and persist the Deal Momentum Score for a given deal."""
+    approvals = db.query(Approval).filter(Approval.deal_id == deal_id).all()
+
+    score = 100
+    for approval in approvals:
+        if approval.status == "pending":
+            score -= WEIGHTS["pending_approval"]
+        if approval.status == "approved":
+            score += WEIGHTS["completed_approval"]
+        if approval.predicted_delay_days and approval.predicted_delay_days > 5:
+            score -= WEIGHTS["delay_risk"]
+
+    score = max(0, min(100, score))
+
+    deal = db.query(Deal).filter(Deal.id == deal_id).first()
+    if deal:
+        deal.momentum_score = score
+        deal.status = "stalled" if score < 50 else "active"
+        db.commit()
+
+    return score
+
+
+def momentum_band(score: int) -> str:
+    """Return a colour-coded risk band for the given momentum score."""
+    if score >= 80:
+        return "green"
+    if score >= 50:
+        return "yellow"
+    return "red"
 
 
 class ComputeMomentumInput(BaseModel):

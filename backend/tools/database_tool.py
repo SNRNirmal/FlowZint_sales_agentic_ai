@@ -22,6 +22,7 @@ Design notes mirror crm_tool.py:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Annotated
 
@@ -184,8 +185,6 @@ async def persist_approvals(
     )
 
     try:
-        import asyncio
-
         persisted, skipped = await asyncio.to_thread(
             _persist_approvals_in_db, db, deal_id, approvals
         )
@@ -232,8 +231,6 @@ async def update_approval_status(
         )
 
     try:
-        import asyncio
-
         approval = await asyncio.to_thread(
             _fetch_previous_status, db, approval_id
         )

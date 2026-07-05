@@ -1,20 +1,34 @@
-from datetime import datetime
+"""Approval routes — Human Review checkpoint endpoints.
+
+These endpoints are the UI-facing half of the human-in-the-loop design:
+  - POST /{id}/send   → human approves the drafted nudge; sends to Slack
+  - POST /{id}/hold   → human holds the draft; nothing is sent
+  - POST /{id}/resolve → human records the actual outcome; triggers Learning
+
+All three are synchronous FastAPI routes backed by SQLAlchemy. Tool-layer
+public functions (compute_momentum_score, record_outcome_sync) are called
+directly so the route stays synchronous without blocking the event loop
+on LangChain async machinery.
+
+No imports from agents.* — all business logic is now in tools/.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from db.database import get_db
+from integrations.slack_client import send_slack_message
 from models.approval import Approval
 from models.deal import Deal
-from integrations.slack_client import send_slack_message
-from agents.approval_tracking import compute_momentum_score
-from agents.learning import record_outcome
+from tools.momentum_tool import compute_momentum_score
+from tools.learning_tool import record_outcome_sync
+from services.deal_service import resume_deal_graph
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 
 @router.post("/{approval_id}/send")
-def send_approval_nudge(approval_id: str, nudge_text: str, db: Session = Depends(get_db)):
+async def send_approval_nudge(approval_id: str, nudge_text: str, db: Session = Depends(get_db)):
     """Human Review Checkpoint: 'Send' button. Nothing reaches a real
     approver until a human explicitly approves this action."""
 
@@ -26,13 +40,24 @@ def send_approval_nudge(approval_id: str, nudge_text: str, db: Session = Depends
     approval.status = "sent"
     db.commit()
 
+    # Resume graph execution (completes pipeline)
+    await resume_deal_graph(deal_id=approval.deal_id, action="approve")
+
     return {"status": "sent", "approval_id": approval_id}
 
 
 @router.post("/{approval_id}/hold")
-def hold_approval_nudge(approval_id: str, db: Session = Depends(get_db)):
+async def hold_approval_nudge(approval_id: str, db: Session = Depends(get_db)):
     """Human Review Checkpoint: 'Hold' button — draft stays pending,
-    nothing is sent."""
+    nothing is sent. Routes back to regenerate."""
+    
+    approval = db.query(Approval).filter(Approval.id == approval_id).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+        
+    # Resume graph execution (loops back for changes)
+    await resume_deal_graph(deal_id=approval.deal_id, action="request_changes")
+    
     return {"status": "held", "approval_id": approval_id}
 
 
@@ -56,7 +81,7 @@ def resolve_approval(
     approval.artifact_format_used = artifact_format_used
     db.commit()
 
-    record_outcome(
+    record_outcome_sync(
         db,
         deal_id=approval.deal_id,
         approver_id=approval.approver_id,

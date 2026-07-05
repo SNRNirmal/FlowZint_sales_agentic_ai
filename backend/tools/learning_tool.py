@@ -1,18 +1,16 @@
-"""Learning Tool — execution bridge to agents/learning.py.
+"""Learning Tool — records approval outcomes and updates Behavioral Twins.
 
-Wraps the existing record_outcome function (which itself calls
-memory/behavioral_twin_store.persist_twin_update and writes the
-learning_log row) as a single tool-calling step for the Learning node
-(Module 8). Kept as one tool, not split across behavioral_twin_tool.py,
-because "close out this approval's learning" is one atomic business
-operation — a twin update with no corresponding learning_log entry
-would be an inconsistent write.
+Self-contained: the record_outcome business logic lives here directly.
+Wraps twin-update + learning_log write as one atomic tool-calling step
+for the Learning node (Module 8). Kept as one tool, not split, because
+a twin update with no learning_log entry would be an inconsistent write.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Annotated
 
 from langchain_core.tools import tool, InjectedToolArg
@@ -26,8 +24,9 @@ from tenacity import (
     before_sleep_log,
 )
 
-from agents.learning import record_outcome
+from behavioral_twins.twin_store import update_twin_after_deal
 from memory.behavioral_twin_store import get_twin_snapshot
+from models.learning_log import LearningLog
 from schemas.graph_state import BehavioralTwinSnapshot
 
 logger = logging.getLogger("threshold.tools.learning")
@@ -62,14 +61,45 @@ def _record(
     artifact_format_used: str,
     delay_reason: str,
 ) -> None:
-    record_outcome(
+    """Update the approver's Behavioral Twin and write a learning_log row.
+
+    This is the former agents/learning.py record_outcome() logic, inlined
+    here so the agents/ package can be deleted without breaking this tool.
+    """
+    update_twin_after_deal(
         db,
-        deal_id=deal_id,
         approver_id=approver_id,
         actual_delay_days=actual_delay_days,
         artifact_format_used=artifact_format_used,
-        delay_reason=delay_reason,
     )
+
+    log = LearningLog(
+        id=str(uuid.uuid4()),
+        deal_id=deal_id,
+        approver_id=approver_id,
+        delay_reason=delay_reason,
+        successful_action=artifact_format_used,
+        approval_duration_days=actual_delay_days,
+    )
+    db.add(log)
+    db.commit()
+
+
+def record_outcome_sync(
+    db: Session,
+    deal_id: str,
+    approver_id: str,
+    actual_delay_days: float,
+    artifact_format_used: str,
+    delay_reason: str = "",
+) -> None:
+    """Public synchronous entry point for the learning-outcome write.
+
+    Delegates entirely to ``_record`` (which carries the tenacity retry
+    decorator). Exists so callers — primarily synchronous FastAPI routes —
+    can import a public symbol instead of crossing a private boundary.
+    """
+    _record(db, deal_id, approver_id, actual_delay_days, artifact_format_used, delay_reason)
 
 
 @tool(args_schema=RecordOutcomeInput)
