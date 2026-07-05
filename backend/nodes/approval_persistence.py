@@ -77,7 +77,7 @@ from tools.momentum_tool import compute_momentum_score
 logger = logging.getLogger("threshold.nodes.approval_persistence")
 
 
-async def approval_persistence_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+async def approval_persistence_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph execution node: Approval Persistence.
 
     Writes the ApprovalStatus records produced by approval_detection_node

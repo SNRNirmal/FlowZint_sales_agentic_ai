@@ -95,7 +95,7 @@ def _fallback_artifact(approver_id: str, department: str, deal) -> DraftedArtifa
     return DraftedArtifact(content=content, format_used="fallback template", approver_id=approver_id)
 
 
-async def document_generator_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+async def document_generator_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph execution node: Document Generator.
 
     Parameters

@@ -92,7 +92,7 @@ def _fallback_nudge(approver_id: str, department: str, deal) -> DraftedNudge:
     return DraftedNudge(message=message, urgency="normal", approver_id=approver_id)
 
 
-async def communication_planner_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+async def communication_planner_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph execution node: Communication Planner.
 
     Parameters

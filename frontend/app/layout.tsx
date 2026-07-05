@@ -1,12 +1,27 @@
-export const metadata = {
-  title: "Threshold — Deal Friction Intelligence",
-  description: "Autonomous internal approval bottleneck agent",
-};
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import { Providers } from "./providers"
+import "./globals.css"
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
+
+export const metadata: Metadata = {
+  title: "FlowZint — Deal Friction Intelligence",
+  description: "AI-powered engineering intelligence platform",
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="en">
-      <body style={{ fontFamily: "sans-serif", margin: 0 }}>{children}</body>
+    <html lang="en" className="dark">
+      <body className={`${inter.variable} font-sans bg-background text-foreground antialiased min-h-screen`}>
+        <Providers>
+          {children}
+        </Providers>
+      </body>
     </html>
-  );
+  )
 }

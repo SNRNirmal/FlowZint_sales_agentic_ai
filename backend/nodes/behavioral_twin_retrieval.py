@@ -63,7 +63,7 @@ class TwinRetrievalResult(BaseModel):
     failed_approvers: list[str] = Field(default_factory=list)
 
 
-async def behavioral_twin_retrieval_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+async def behavioral_twin_retrieval_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph reasoning node: Behavioral Twin Retrieval.
 
     Parameters

@@ -35,7 +35,7 @@ from tools.slack_tool import send_slack_nudge
 logger = logging.getLogger("threshold.nodes.approval_tracking")
 
 
-async def approval_tracking_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+async def approval_tracking_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph execution node: Approval Tracking.
 
     Executes approved notifications and updates the corresponding DB records.

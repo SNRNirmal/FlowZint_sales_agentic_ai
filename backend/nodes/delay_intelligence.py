@@ -106,7 +106,7 @@ def _build_twin_context(twin, department: str, db, deal_id: str) -> str:
     )
 
 
-async def delay_intelligence_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph reasoning node: Delay Intelligence.
 
     Parameters

@@ -42,7 +42,7 @@ from schemas.graph_state import GraphState, HumanReviewDecision
 logger = logging.getLogger("threshold.nodes.human_review")
 
 
-def human_review_node(state: GraphState, config: RunnableConfig | None = None) -> dict:
+def human_review_node(state: GraphState, config: RunnableConfig) -> dict:
     """LangGraph execution node: Human Review.
 
     Pauses the graph to wait for human review of the generated artifacts

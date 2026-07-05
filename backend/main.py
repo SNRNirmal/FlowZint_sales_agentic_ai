@@ -1,17 +1,15 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import init_db
 from graphs.builder import build_graph
+from memory.checkpointer import close_checkpointer
 from routes import deals, approvals, webhooks, dashboard
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler.
-
     1. Creates all SQLAlchemy tables (init_db).
     2. Pre-compiles the LangGraph StateGraph (build_graph).
        Compiling here — at startup, before the first request — means:
@@ -20,8 +18,11 @@ async def lifespan(app: FastAPI):
             compile() simultaneously because _compiled_graph was None.
     """
     init_db()
-    build_graph()  # Pre-warm: compile graph + checkpointer setup before first request
-    yield
+    build_graph()
+    try:
+        yield
+    finally:
+        close_checkpointer()
 
 
 app = FastAPI(
