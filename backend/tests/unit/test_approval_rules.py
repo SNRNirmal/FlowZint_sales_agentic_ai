@@ -100,3 +100,21 @@ def test_rule_table_wiring_is_pinned():
         ("Compliance", "compliance_maria", 5),
         ("Executive", "exec_daniel", 6),
     ]
+
+
+async def test_sixty_k_standard_smb_deal_fires_finance_alone():
+    state = GraphState(deal=make_quiet_deal(value=60_000))
+    update = await approval_detection_node(state)
+    assert [a.department for a in update["approvals"]] == ["Finance"]
+
+
+async def test_enterprise_standard_small_deal_fires_security_alone():
+    state = GraphState(deal=make_quiet_deal(customer_segment="enterprise"))
+    update = await approval_detection_node(state)
+    assert [a.department for a in update["approvals"]] == ["Security"]
+
+
+async def test_custom_smb_200k_deal_fires_finance_legal_procurement():
+    state = GraphState(deal=make_quiet_deal(product_type="custom", value=200_000))
+    update = await approval_detection_node(state)
+    assert [a.department for a in update["approvals"]] == ["Finance", "Legal", "Procurement"]
