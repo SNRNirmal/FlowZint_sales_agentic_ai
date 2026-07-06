@@ -730,12 +730,32 @@ try, silently dropping approvers (4-of-5 risk scores observed).
 conftest (namespace package). Fix by adding `__init__.py` files to
 `tests/`, `tests/unit/`, `tests/graph/`, `tests/api/`.
 
+**Proven recipe (validated empirically in-session):** construct via
+`conn = await aiosqlite.connect(path)`, `saver = AsyncSqliteSaver(conn)`,
+`await saver.setup()` (file exists durably right after setup). Construction
+and close are async-only: `await conn.close()` releases the Windows file
+handle (unlink succeeds); an unawaited `conn.close()` is a no-op coroutine
+that leaks aiosqlite's background thread. Do NOT lazily construct from sync
+code while a loop runs. **Sync `graph.get_state()` raises
+`InvalidStateError` with AsyncSqliteSaver when called from the main/loop
+thread — every call site must become `await graph.aget_state(...)`.**
+
 **Files:**
-- Modify: `backend/memory/checkpointer.py` (SqliteSaver → AsyncSqliteSaver; keep `get_checkpointer()` sync-callable, `CHECKPOINT_DB_PATH` read at init, eager DB-file creation, close/reset releasing the file handle from sync contexts possibly inside a running loop)
+- Modify: `backend/memory/checkpointer.py` — add `async def ainit_checkpointer()` (aiosqlite connect + AsyncSqliteSaver + setup, assigns singleton) and `async def aclose_checkpointer()` (awaited close + clear); `get_checkpointer()` stays the sync fast-path accessor for the pre-initialized singleton and raises a clear error if never initialized; keep `CHECKPOINT_DB_PATH` read at init and parent-dir mkdir.
+- Modify: `backend/main.py` lifespan — `await ainit_checkpointer()` before `build_graph()`; `await aclose_checkpointer()` on shutdown.
+- Modify: `backend/services/deal_service.py:127` — `graph.get_state(config)` → `await graph.aget_state(config)` (breaks outright post-swap otherwise).
+- Modify: `backend/tests/conftest.py` — `fresh_graph_and_checkpointer` becomes an async autouse fixture: awaits `ainit_checkpointer()` after setting `CHECKPOINT_DB_PATH`, awaits `aclose_checkpointer()` + builder reset on teardown.
+- Modify: `backend/tests/unit/test_reset_helpers.py` — rewrite the two tests against the new async init/close API (same contracts: singleton until reset; env re-read after reset; file created eagerly; unlink proves handle release).
 - Modify: `backend/nodes/delay_intelligence.py` (build twin contexts sequentially over the shared session before gathering the concurrent LLM calls; keep LLM concurrency)
 - Modify: `backend/nodes/behavioral_twin_retrieval.py` (fetch twins sequentially over the shared session — local SQLite reads gain nothing from `gather` and the retries were masking real collisions)
 - Create: `backend/tests/graph/test_async_checkpointer.py` (RED first: quiet-deal `graph.ainvoke` smoke test that currently fails with NotImplementedError; GREEN after the swap)
 - Create: `backend/tests/__init__.py`, `backend/tests/unit/__init__.py`, `backend/tests/graph/__init__.py`, `backend/tests/api/__init__.py` (empty)
+
+> **Amendment to Tasks 7 and 8 below (post-swap API):** every
+> `graph.get_state(config)` in their code blocks must be
+> `await graph.aget_state(config)`, and `_assert_not_paused` becomes
+> `async def` (awaited at call sites). The dispatching controller hands
+> implementers the amended code.
 
 **Verification:**
 - Existing suite stays green (reset tests still prove file-handle release via `unlink()` on Windows).
