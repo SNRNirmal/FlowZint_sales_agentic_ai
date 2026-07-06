@@ -118,3 +118,9 @@ async def test_custom_smb_200k_deal_fires_finance_legal_procurement():
     state = GraphState(deal=make_quiet_deal(product_type="custom", value=200_000))
     update = await approval_detection_node(state)
     assert [a.department for a in update["approvals"]] == ["Finance", "Legal", "Procurement"]
+
+
+async def test_120k_standard_smb_deal_fires_finance_and_legal_only():
+    state = GraphState(deal=make_quiet_deal(value=120_000))
+    update = await approval_detection_node(state)
+    assert [a.department for a in update["approvals"]] == ["Finance", "Legal"]
