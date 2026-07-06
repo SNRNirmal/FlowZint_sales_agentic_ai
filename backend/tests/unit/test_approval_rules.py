@@ -2,6 +2,7 @@
 pin every rule boundary so a rule change is always a conscious act."""
 
 from nodes.approval_detection import (
+    APPROVAL_RULES,
     _needs_compliance,
     _needs_executive,
     _needs_finance,
@@ -85,4 +86,17 @@ async def test_node_queues_one_twin_retrieval_task_per_approval():
     update = await approval_detection_node(state)
     assert update["pending_tasks"] == [
         f"retrieve_twin:{a.approver_id}" for a in update["approvals"]
+    ]
+
+
+# ---- Rule table wiring ----------------------------------------------------
+
+def test_rule_table_wiring_is_pinned():
+    assert [(r.department, r.approver_id, r.priority) for r in APPROVAL_RULES] == [
+        ("Finance", "finance_raj", 1),
+        ("Legal", "legal_jane", 2),
+        ("Security", "security_amy", 3),
+        ("Procurement", "procurement_li", 4),
+        ("Compliance", "compliance_maria", 5),
+        ("Executive", "exec_daniel", 6),
     ]
