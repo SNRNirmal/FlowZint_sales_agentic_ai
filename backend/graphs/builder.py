@@ -145,3 +145,11 @@ def build_graph():
 
     logger.info("Threshold StateGraph compiled successfully")
     return _compiled_graph
+
+
+def reset_for_testing() -> None:
+    """Drop the compiled-graph singleton so the next build_graph() call
+    recompiles (against whatever checkpointer is then active). Exists for
+    the test suite; production never calls it."""
+    global _compiled_graph
+    _compiled_graph = None

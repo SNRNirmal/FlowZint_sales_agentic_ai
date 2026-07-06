@@ -155,3 +155,10 @@ def thread_config(deal_id: str) -> dict[str, Any]:
     (deal_id) and the same key structure without duplicating the dict literal.
     """
     return {"configurable": {"thread_id": deal_id}}
+
+
+def reset_for_testing() -> None:
+    """Close and clear the checkpointer singleton so the next
+    get_checkpointer() call re-reads CHECKPOINT_DB_PATH. Exists for the
+    test suite; production uses close_checkpointer() at shutdown."""
+    close_checkpointer()
