@@ -709,6 +709,43 @@ git commit -m "test: pin GraphState reducer contract and validation rules"
 
 ---
 
+### Task 6.5: Production fixes required before graph tests (user-approved 2026-07-07)
+
+> Added after Task 3's code-quality review empirically found two pre-existing
+> production bugs that block Tasks 7–8 and break/flake production itself.
+> The user explicitly approved changing production code for both.
+
+**Finding 1 (deterministic blocker):** with `langgraph==1.2.7` +
+`langgraph-checkpoint-sqlite==3.1.0`, the sync `SqliteSaver` raises
+`NotImplementedError: The SqliteSaver does not support async methods` on the
+first `graph.ainvoke()` — `POST /webhooks/crm` cannot complete a run.
+
+**Finding 2 (~50% flaky):** nodes fan out `asyncio.to_thread` calls
+concurrently over the single injected DB session. `behavioral_twin_retrieval`
+masks collisions via tenacity retries; `delay_intelligence`'s cold-start
+`get_department_pattern` call has no retry and sits outside the per-approver
+try, silently dropping approvers (4-of-5 risk scores observed).
+
+**Finding 3 (hygiene):** `from tests.conftest import ...` double-imports the
+conftest (namespace package). Fix by adding `__init__.py` files to
+`tests/`, `tests/unit/`, `tests/graph/`, `tests/api/`.
+
+**Files:**
+- Modify: `backend/memory/checkpointer.py` (SqliteSaver → AsyncSqliteSaver; keep `get_checkpointer()` sync-callable, `CHECKPOINT_DB_PATH` read at init, eager DB-file creation, close/reset releasing the file handle from sync contexts possibly inside a running loop)
+- Modify: `backend/nodes/delay_intelligence.py` (build twin contexts sequentially over the shared session before gathering the concurrent LLM calls; keep LLM concurrency)
+- Modify: `backend/nodes/behavioral_twin_retrieval.py` (fetch twins sequentially over the shared session — local SQLite reads gain nothing from `gather` and the retries were masking real collisions)
+- Create: `backend/tests/graph/test_async_checkpointer.py` (RED first: quiet-deal `graph.ainvoke` smoke test that currently fails with NotImplementedError; GREEN after the swap)
+- Create: `backend/tests/__init__.py`, `backend/tests/unit/__init__.py`, `backend/tests/graph/__init__.py`, `backend/tests/api/__init__.py` (empty)
+
+**Verification:**
+- Existing suite stays green (reset tests still prove file-handle release via `unlink()` on Windows).
+- New smoke test passes.
+- Race fix proven by running the full-deal pipeline scenario 10 consecutive times with all-5-approver assertions (was ~50% flaky before).
+
+**Commit:** `fix: async checkpointer and race-safe node DB reads (unblocks graph tests)`
+
+---
+
 ### Task 7: Graph lifecycle integration tests
 
 **Files:**
