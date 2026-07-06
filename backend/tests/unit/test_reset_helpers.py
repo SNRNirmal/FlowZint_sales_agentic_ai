@@ -10,6 +10,8 @@ import memory.checkpointer as checkpointer_module
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
     monkeypatch.setenv("CHECKPOINT_DB_PATH", str(tmp_path / "ckpt.db"))
+    builder_module.reset_for_testing()
+    checkpointer_module.reset_for_testing()
     yield
     builder_module.reset_for_testing()
     checkpointer_module.reset_for_testing()
@@ -31,6 +33,9 @@ def test_checkpointer_reset_rereads_env(tmp_path, monkeypatch):
     assert (tmp_path / "first.db").exists()
 
     checkpointer_module.reset_for_testing()
+    # Proves the SQLite handle was actually released (unlink of an
+    # open file raises PermissionError on Windows).
+    (tmp_path / "first.db").unlink()
     monkeypatch.setenv("CHECKPOINT_DB_PATH", str(tmp_path / "second.db"))
     c2 = checkpointer_module.get_checkpointer()
     assert c2 is not c1

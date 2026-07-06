@@ -160,5 +160,9 @@ def thread_config(deal_id: str) -> dict[str, Any]:
 def reset_for_testing() -> None:
     """Close and clear the checkpointer singleton so the next
     get_checkpointer() call re-reads CHECKPOINT_DB_PATH. Exists for the
-    test suite; production uses close_checkpointer() at shutdown."""
+    test suite; production uses close_checkpointer() at shutdown.
+
+    Callers must also call graphs.builder.reset_for_testing(): a
+    previously compiled graph holds a reference to the now-closed
+    checkpointer and will fail on next use."""
     close_checkpointer()
