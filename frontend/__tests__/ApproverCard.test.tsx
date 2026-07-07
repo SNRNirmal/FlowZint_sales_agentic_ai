@@ -21,8 +21,8 @@ describe("ApproverCard", () => {
   it("shows the behavioral statistics", () => {
     render(<ApproverCard twin={twin} />)
     expect(screen.getByText(/3.2 days/)).toBeInTheDocument()
-    expect(screen.getByText(/one-pager/)).toBeInTheDocument()
-    expect(screen.getByText(/missing discount justification/)).toBeInTheDocument()
+    expect(screen.getByText(/Responds fastest to: one-pager/)).toBeInTheDocument()
+    expect(screen.getByText(/Slows down on: missing discount justification/)).toBeInTheDocument()
   })
 
   it("shows the sample size behind the twin", () => {
