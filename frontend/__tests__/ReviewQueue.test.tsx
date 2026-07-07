@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event"
 vi.mock("@/lib/api", () => ({
   sendApprovalNudge: vi.fn().mockResolvedValue({}),
   holdApprovalNudge: vi.fn().mockResolvedValue({}),
-}))
+} satisfies Partial<typeof import("@/lib/api")>))
 
 import { holdApprovalNudge, sendApprovalNudge } from "@/lib/api"
 import ReviewQueue from "@/components/ReviewQueue"
@@ -58,6 +58,17 @@ describe("ReviewQueue", () => {
     expect(holdApprovalNudge).toHaveBeenCalledWith("ap-1")
     expect(await screen.findByText(/Status: held/)).toBeInTheDocument()
     expect(sendApprovalNudge).not.toHaveBeenCalled()
+  })
+
+  it("tracks status per card, not globally", async () => {
+    const user = userEvent.setup()
+    render(<ReviewQueue actions={[action, { ...action, approval_id: "ap-2", department: "Legal" }]} />)
+
+    await user.click(screen.getAllByRole("button", { name: "Send" })[0])
+
+    expect(sendApprovalNudge).toHaveBeenCalledTimes(1)
+    expect(sendApprovalNudge).toHaveBeenCalledWith("ap-1", "Please review this deal")
+    expect(await screen.findAllByText(/Status: sent/)).toHaveLength(1)
   })
 
   it("renders nothing gracefully for an empty queue", () => {
