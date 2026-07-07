@@ -24,8 +24,11 @@ async def lifespan(app: FastAPI):
     """
     init_db()
     await ainit_checkpointer()
-    build_graph()
     try:
+        # Inside the try so a compile failure still closes the checkpointer:
+        # aiosqlite's worker thread is non-daemon, and leaking it would turn
+        # a fail-fast startup abort into a process hang.
+        build_graph()
         yield
     finally:
         await aclose_checkpointer()

@@ -62,8 +62,10 @@ _checkpointer_instance: Optional[AsyncSqliteSaver] = None
 _checkpointer_conn: Optional[aiosqlite.Connection] = None
 # Guards the degenerate case of two tasks awaiting ainit_checkpointer()
 # concurrently (normal callers — the lifespan handler or the test fixture —
-# are single-task). Never contended across event loops, so a module-level
-# lock is safe.
+# are single-task). A CONTENDED acquire binds asyncio.Lock to that event
+# loop, so aclose_checkpointer() re-instantiates it — otherwise a later
+# contended acquire from a different loop (tests get a fresh loop per
+# function) would raise RuntimeError.
 _init_lock = asyncio.Lock()
 
 
@@ -163,12 +165,20 @@ async def aclose_checkpointer() -> None:
     thread and releases the DB file handle; an unawaited close() is a no-op
     coroutine that leaks the thread and pins the file on Windows.
 
+    Closing while a graph operation is in flight makes that operation fail
+    with ``ValueError: Connection closed`` — a clean failure, no DB
+    corruption; safe today because requests drain before lifespan teardown,
+    but a concern if fire-and-forget graph runs are ever added.
+
     Test-suite callers must also call graphs.builder.reset_for_testing():
     a previously compiled graph holds a reference to the now-closed
     checkpointer and will fail on next use. The next ainit_checkpointer()
     re-reads CHECKPOINT_DB_PATH.
     """
-    global _checkpointer_instance, _checkpointer_conn
+    global _checkpointer_instance, _checkpointer_conn, _init_lock
+
+    # Fresh, loop-unbound lock for the next init cycle (see _init_lock note).
+    _init_lock = asyncio.Lock()
 
     if _checkpointer_conn is not None:
         logger.info("Closing checkpointer connection")
