@@ -99,13 +99,24 @@ def test_hold_resumes_with_request_changes_and_sends_nothing(
     assert resume_recorder == {"deal_id": "deal-1", "action": "request_changes"}
 
 
+def test_hold_missing_approval_is_404(client, resume_recorder):
+    assert client.post("/approvals/nope/hold").status_code == 404
+    assert resume_recorder == {}
+
+
 def test_resolve_records_outcome_and_recomputes_momentum(
     client, db_session, seeded_approval, monkeypatch
 ):
     outcome_calls = {}
 
-    def fake_record(db, **kwargs):
-        outcome_calls.update(kwargs)
+    def fake_record(db, deal_id, approver_id, actual_delay_days, artifact_format_used, delay_reason=""):
+        outcome_calls.update(
+            deal_id=deal_id,
+            approver_id=approver_id,
+            actual_delay_days=actual_delay_days,
+            artifact_format_used=artifact_format_used,
+            delay_reason=delay_reason,
+        )
 
     monkeypatch.setattr("routes.approvals.record_outcome_sync", fake_record)
     monkeypatch.setattr("routes.approvals.compute_momentum_score", lambda db, deal_id: 85)
@@ -122,6 +133,14 @@ def test_resolve_records_outcome_and_recomputes_momentum(
     assert row.status == "approved"
     assert row.actual_delay_days == 2.5
     assert outcome_calls["approver_id"] == "finance_raj"
+
+
+def test_resolve_missing_approval_is_404(client, monkeypatch):
+    outcome_calls = {}
+    monkeypatch.setattr("routes.approvals.record_outcome_sync", lambda db, **kw: outcome_calls.update(kw))
+    resp = client.post("/approvals/nope/resolve", params={"actual_delay_days": 1.0, "artifact_format_used": "x"})
+    assert resp.status_code == 404
+    assert outcome_calls == {}
 
 
 def test_resolve_missing_required_params_is_422(client, seeded_approval):

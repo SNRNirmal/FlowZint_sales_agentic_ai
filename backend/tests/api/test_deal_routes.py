@@ -93,8 +93,10 @@ def test_crm_webhook_persists_deal_and_maps_drafted_actions(client, db_session, 
     assert resp.status_code == 200
     body = resp.json()
     assert db_session.query(Deal).filter_by(id=body["deal_id"]).count() == 1
+    assert "momentum_score" in body
     action = body["drafted_actions"][0]
     assert action["approval_id"] == "ap-9"
     assert action["artifact_draft"] == "artifact text"
     assert action["nudge_draft"] == "nudge text"
     assert action["review_status"] == "awaiting_human_review"
+    assert action["prediction"]["delay_probability"] == 0.42
