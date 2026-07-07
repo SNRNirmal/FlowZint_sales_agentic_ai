@@ -31,6 +31,7 @@ async def _run_to_pause(db_session, deal_id: str) -> Deal:
 async def _assert_not_paused(deal_id: str):
     snapshot = await builder_module.build_graph().aget_state(thread_config(deal_id))
     assert snapshot.next == ()
+    assert snapshot.values  # completed run — not "no checkpoint at all"
 
 
 async def test_resume_with_approve_completes_pipeline(db_session):
@@ -62,6 +63,8 @@ async def test_request_changes_regenerates_and_pauses_again(db_session, mock_llm
 
     # Looped back through document_generator → drafted 5 more artifacts…
     assert len(mock_llms["docs"].calls) == drafts_before + 5
+    assert len(mock_llms["nudges"].calls) == drafts_before + 5  # comm planner re-ran on the loop
+    assert len(mock_llms["delay"].calls) == 5                   # loop enters AT document_generator
     # …and is now paused at human_review for a SECOND review.
     snapshot = await builder_module.build_graph().aget_state(thread_config("deal-loop"))
     assert snapshot.next == ("human_review",)
@@ -97,4 +100,26 @@ async def test_paused_review_survives_process_restart(db_session):
 
     final = await resume_deal_graph("deal-restart", "approve", reviewer="post-restart")
     assert as_state(final).latest_review.action == "approve"
+    assert as_state(final).latest_review.reviewed_by == "post-restart"
     await _assert_not_paused("deal-restart")
+
+
+async def test_pause_does_not_survive_checkpoint_file_deletion(db_session, tmp_path):
+    """Negative control for durability: the pause lives in the checkpoint
+    FILE, nowhere else. Deleting it between close and re-init must lose the
+    pause — and the unlink itself proves aclose released the handle."""
+    import os
+    from pathlib import Path
+
+    await _run_to_pause(db_session, "deal-ephemeral")
+
+    builder_module.reset_for_testing()
+    await checkpointer_module.aclose_checkpointer()
+
+    Path(os.environ["CHECKPOINT_DB_PATH"]).unlink()  # raises on Windows if handle leaked
+
+    await checkpointer_module.ainit_checkpointer()
+    snapshot = await builder_module.build_graph().aget_state(thread_config("deal-ephemeral"))
+    assert snapshot.next == ()
+
+    assert await resume_deal_graph("deal-ephemeral", "approve") is None
