@@ -12,18 +12,18 @@ Architecture position:
 
 Design notes:
   - Calls tools.behavioral_twin_tool.get_behavioral_twin for every
-    approver CONCURRENTLY via asyncio.gather — each fetch is
-    independent (different approver_id, no shared mutable state
-    between them), so this is the node-level parallel execution
-    called out in the architecture doc's "Parallel Execution"
-    section. True graph-level fan-out (separate LangGraph nodes per
-    branch) is wired in Module 9; this is the node-internal
-    concurrency available today without it.
+    approver SEQUENTIALLY. The fetches all read through the single DB
+    session injected via the graph config, and a SQLite session is not
+    safe under concurrent access from multiple to_thread workers — the
+    old asyncio.gather fan-out caused sqlite3.InterfaceError collisions
+    that the tool's tenacity retries were masking. Local SQLite reads
+    gain nothing from concurrency anyway; the LLM fan-out in later
+    nodes is where parallelism pays.
   - Goes through the tool layer (Module 3), never imports
     memory/behavioral_twin_store.py directly — enforces the
     "separate reasoning from execution/tool agents" requirement
     structurally, not just by convention.
-  - individual fetch failures are isolated (return_exceptions=True):
+  - individual fetch failures are isolated (per-fetch try/except):
     one approver's twin-fetch exception does not fail the whole node
     or block the other approvers' results.
   - No twin found → tool already returns a confidence=0.0 default
@@ -34,7 +34,6 @@ Design notes:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from langchain_core.runnables import RunnableConfig
@@ -128,14 +127,21 @@ async def behavioral_twin_retrieval_node(state: GraphState, config: RunnableConf
             return approval.approver_id, result
 
         logger.info(
-            "Fetching behavioral twins concurrently",
+            "Fetching behavioral twins sequentially over the shared DB session",
             extra={"deal_id": deal.deal_id, "approver_count": len(approvals)},
         )
 
-        results = await asyncio.gather(
-            *(fetch_one(approval) for approval in approvals),
-            return_exceptions=True,
-        )
+        # Sequential on purpose — see the module docstring: concurrent
+        # reads over the one injected SQLite session collide. Exceptions
+        # are appended in place of results so a failed fetch does not
+        # kill the other approvers' fetches (same isolation contract as
+        # the old gather(return_exceptions=True)).
+        results = []
+        for approval in approvals:
+            try:
+                results.append(await fetch_one(approval))
+            except Exception as exc:
+                results.append(exc)
 
         twins: dict[str, BehavioralTwinSnapshot] = {}
         low_confidence: list[str] = []

@@ -123,8 +123,10 @@ async def resume_deal_graph(deal_id: str, action: str, feedback: str = "", revie
     config = thread_config(deal_id)
     graph = build_graph()
 
-    # Verify the graph is actually paused
-    state_snapshot = graph.get_state(config)
+    # Verify the graph is actually paused. Must be aget_state: the sync
+    # get_state() raises InvalidStateError when called on the event-loop
+    # thread with AsyncSqliteSaver.
+    state_snapshot = await graph.aget_state(config)
     if not state_snapshot.next:
         logger.warning(
             "Attempted to resume a graph that is not paused",

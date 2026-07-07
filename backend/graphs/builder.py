@@ -22,7 +22,7 @@ Pipeline sequence:
   END
 
 Design notes:
-  - SqliteSaver checkpointer is attached at compile time. Every node's
+  - AsyncSqliteSaver checkpointer is attached at compile time. Every node's
     output is persisted to disk keyed by thread_id (= deal_id), enabling
     interrupt() / Command(resume=...) in future Human Review nodes.
   - The graph is compiled ONCE per process (singleton via _compiled_graph).

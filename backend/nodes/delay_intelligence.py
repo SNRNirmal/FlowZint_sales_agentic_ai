@@ -17,9 +17,12 @@ Design notes:
     a malformed response raises here instead of silently producing
     an unparseable string, so the except block below is a genuine
     fallback path, not a parsing-error catch-all.
-  - Runs one prediction per approver CONCURRENTLY via asyncio.gather —
-    same node-level parallelism pattern as behavioral_twin_retrieval.py,
-    since each approver's prediction is independent.
+  - Runs one LLM prediction per approver CONCURRENTLY via asyncio.gather,
+    since each approver's prediction is independent. Each approver's twin
+    context is built SEQUENTIALLY first: those reads go through the single
+    DB session injected via the graph config, and a SQLite session is not
+    safe under concurrent access from multiple to_thread workers —
+    collisions silently dropped approvers from risk_scores.
   - Cold-start handling: if an approver has no twin yet (confidence
     0.0, from Module 2's default), this node falls back to
     memory.long_term_store.get_department_pattern() for an org-wide
@@ -148,11 +151,22 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
     llm = _get_structured_llm()
 
     try:
-        async def predict_one(approval):
+        # Build every approver's twin context SEQUENTIALLY before the LLM
+        # fan-out: _build_twin_context reads the shared injected DB session
+        # (get_department_pattern), and concurrent to_thread reads over one
+        # SQLite session collide (sqlite3.InterfaceError), silently dropping
+        # approvers. Local SQLite reads gain nothing from concurrency; only
+        # the LLM calls below are worth running in parallel.
+        twin_contexts: dict[str, str] = {}
+        for approval in approvals:
             twin = twins.get(approval.approver_id)
-            twin_context = await asyncio.to_thread(
+            twin_contexts[approval.approver_id] = await asyncio.to_thread(
                 _build_twin_context, twin, approval.department, db, deal.deal_id
             )
+
+        async def predict_one(approval):
+            twin = twins.get(approval.approver_id)
+            twin_context = twin_contexts[approval.approver_id]
 
             user_prompt = (
                 f"Deal: value=${deal.value}, product_type={deal.product_type}, "

@@ -152,14 +152,20 @@ def mock_llms(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def fresh_graph_and_checkpointer(tmp_path, monkeypatch):
-    """Fresh compiled graph + disposable checkpoint DB per test."""
+async def fresh_graph_and_checkpointer(tmp_path, monkeypatch):
+    """Fresh compiled graph + disposable checkpoint DB per test.
+
+    Async because the AsyncSqliteSaver lifecycle is async-only
+    (aiosqlite connect/close must be awaited from a running loop).
+    ainit BEFORE the test so build_graph() finds an initialized
+    checkpointer; aclose AFTER so the DB file handle is released
+    (tmp_path cleanup on Windows fails on open handles)."""
     monkeypatch.setenv("CHECKPOINT_DB_PATH", str(tmp_path / "checkpoints.db"))
     builder_module.reset_for_testing()
-    checkpointer_module.reset_for_testing()
+    await checkpointer_module.ainit_checkpointer()
     yield
     builder_module.reset_for_testing()
-    checkpointer_module.reset_for_testing()
+    await checkpointer_module.aclose_checkpointer()
 
 
 # ---------------------------------------------------------------------------

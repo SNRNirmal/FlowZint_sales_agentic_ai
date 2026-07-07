@@ -1,34 +1,42 @@
 """LangGraph checkpointer configuration.
 
-This module provides a thread-safe, singleton checkpointer for the LangGraph
+This module provides a singleton checkpointer for the LangGraph
 StateGraph. It persists the full GraphState after every node completes, keyed
 by thread_id (we use deal_id as the thread_id), enabling mid-pipeline suspension
 and resumption.
 
+Why AsyncSqliteSaver
+--------------------
+The service layer drives the graph exclusively through graph.ainvoke().
+The sync SqliteSaver raises NotImplementedError on every async checkpoint
+method ("The SqliteSaver does not support async methods"), which made the
+first graph.ainvoke() — and therefore POST /webhooks/crm — fail outright.
+AsyncSqliteSaver (backed by aiosqlite) implements the async surface natively.
+
 Production Considerations
 -------------------------
-The current backend defaults to SQLite via SqliteSaver, which is suitable for
-hackathons, local development, and low-concurrency deployments. The database
-is created automatically if the parent directory does not exist.
+SQLite is suitable for hackathons, local development, and low-concurrency
+deployments. The database is created automatically if the parent directory
+does not exist. For production with high concurrency, a Postgres-backed
+saver is recommended. This file is structured so that swapping backends is
+isolated entirely here — no other module (including builder.py) needs to
+know which backend is used.
 
-For production with high concurrency, PostgresSaver is recommended. This file
-is structured so that swapping to PostgresSaver is isolated entirely here — no
-other module (including builder.py) needs to know which backend is used.
+Singleton Lifecycle (async-only construction)
+---------------------------------------------
+aiosqlite connections can only be opened and closed from a running event
+loop, so the lifecycle is split:
 
-Thread-safety and Singleton Lifecycle
--------------------------------------
-`get_checkpointer()` is called at startup from the FastAPI lifespan
-handler (before any request is accepted) and never again thereafter
-— the singleton is set once and only read after that. The
-`threading.Lock` around construction guards against the degenerate
-case where `get_checkpointer()` is called concurrently during a test
-or by future code that bypasses the lifespan pre-warm.
-
-Graceful Shutdown
------------------
-The checkpointer uses a context manager (`SqliteSaver.from_conn_string`) which
-is entered at startup. `close_checkpointer()` must be called during the FastAPI
-lifespan shutdown (after `yield`) to cleanly close the database connection.
+- ``await ainit_checkpointer()`` — awaited once at startup from the FastAPI
+  lifespan handler (before build_graph()) or from the test fixture.
+  Idempotent: returns the existing singleton if already initialized.
+- ``get_checkpointer()`` — sync fast-path accessor used by graphs/builder.py
+  at compile time. Raises RuntimeError if ainit_checkpointer() has not
+  been awaited yet.
+- ``await aclose_checkpointer()`` — awaited at shutdown (lifespan teardown)
+  or test teardown. Closing stops aiosqlite's background thread and
+  releases the DB file handle (an open handle blocks deleting the file
+  on Windows).
 
 Startup Failure
 ---------------
@@ -37,27 +45,34 @@ exception propagates to the caller. When called from the FastAPI lifespan,
 this aborts the process immediately, ensuring a "fail fast" startup behavior.
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
 import os
-import sqlite3
-import threading
-from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, Optional
 
-from langgraph.checkpoint.sqlite import SqliteSaver
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 logger = logging.getLogger("threshold.memory.checkpointer")
 
-_checkpointer_instance: Optional[SqliteSaver] = None
-_checkpointer_cm: Optional[AbstractContextManager] = None
-_checkpointer_lock = threading.Lock()
+_checkpointer_instance: Optional[AsyncSqliteSaver] = None
+_checkpointer_conn: Optional[aiosqlite.Connection] = None
+# Guards the degenerate case of two tasks awaiting ainit_checkpointer()
+# concurrently (normal callers — the lifespan handler or the test fixture —
+# are single-task). Never contended across event loops, so a module-level
+# lock is safe.
+_init_lock = asyncio.Lock()
 
 
-def get_checkpointer() -> SqliteSaver:
-    """Return the singleton checkpointer, initializing it if necessary.
+async def ainit_checkpointer() -> AsyncSqliteSaver:
+    """Initialize and return the singleton AsyncSqliteSaver.
 
-    Uses double-checked locking for thread safety.
+    Idempotent: returns the existing singleton if already initialized.
+    Must be awaited before build_graph() — from the FastAPI lifespan
+    handler in production, or from the test fixture in the suite.
 
     Configuration:
     - CHECKPOINT_BACKEND (default: sqlite)
@@ -70,12 +85,12 @@ def get_checkpointer() -> SqliteSaver:
         database connection, or schema setup. In a FastAPI lifespan, this
         causes a fail-fast startup abort.
     """
-    global _checkpointer_instance, _checkpointer_cm
+    global _checkpointer_instance, _checkpointer_conn
 
     if _checkpointer_instance is not None:
         return _checkpointer_instance
 
-    with _checkpointer_lock:
+    async with _init_lock:
         if _checkpointer_instance is not None:
             return _checkpointer_instance
 
@@ -98,54 +113,75 @@ def get_checkpointer() -> SqliteSaver:
             logger.error(f"Failed to create checkpoint directory: {e}")
             raise
 
+        conn: Optional[aiosqlite.Connection] = None
         try:
-            if hasattr(SqliteSaver, "from_conn_string"):
-                cm = SqliteSaver.from_conn_string(str(db_path))
-                instance = cm.__enter__()
-                _checkpointer_cm = cm
-            else:
-                conn = sqlite3.connect(str(db_path), check_same_thread=False)
-                instance = SqliteSaver(conn)
-                _checkpointer_cm = None
-
-            instance.setup()
-            _checkpointer_instance = instance
-            logger.info("Checkpointer initialized and schema tables created")
+            conn = await aiosqlite.connect(str(db_path))
+            instance = AsyncSqliteSaver(conn)
+            await instance.setup()  # commits DDL — the DB file is durable immediately
         except Exception as e:
-            logger.error(f"Failed to initialize SqliteSaver: {e}")
+            logger.error(f"Failed to initialize AsyncSqliteSaver: {e}")
+            if conn is not None:
+                try:
+                    await conn.close()
+                except Exception:
+                    pass  # don't mask the original init failure
             raise
+
+        _checkpointer_conn = conn
+        _checkpointer_instance = instance
+        logger.info("Checkpointer initialized and schema tables created")
 
     return _checkpointer_instance
 
 
-def close_checkpointer() -> None:
-    """Cleanly close the checkpointer connection.
+def get_checkpointer() -> AsyncSqliteSaver:
+    """Sync fast-path accessor for the initialized singleton.
 
-    Must be called during application shutdown (e.g., FastAPI lifespan teardown).
+    graphs/builder.py calls this at compile time; by then the lifespan
+    handler (or the test fixture) must already have awaited
+    ainit_checkpointer().
+
+    Raises
+    ------
+    RuntimeError
+        If the checkpointer has not been initialized — call
+        ainit_checkpointer() at startup / in the test fixture first.
     """
-    global _checkpointer_instance, _checkpointer_cm
+    if _checkpointer_instance is None:
+        raise RuntimeError(
+            "Checkpointer not initialized — await ainit_checkpointer() "
+            "at startup / in the test fixture first."
+        )
+    return _checkpointer_instance
 
-    with _checkpointer_lock:
-        if _checkpointer_cm is not None:
-            logger.info("Closing checkpointer connection")
-            try:
-                _checkpointer_cm.__exit__(None, None, None)
-            except Exception as e:
-                logger.error(f"Error while closing checkpointer: {e}")
-            finally:
-                _checkpointer_cm = None
-                _checkpointer_instance = None
-                logger.info("Checkpointer shutdown complete")
-        elif _checkpointer_instance is not None:
-            logger.info("Closing checkpointer connection (manual fallback)")
-            try:
-                if hasattr(_checkpointer_instance, "conn"):
-                    _checkpointer_instance.conn.close()
-            except Exception as e:
-                logger.error(f"Error while closing manual checkpointer connection: {e}")
-            finally:
-                _checkpointer_instance = None
-                logger.info("Checkpointer shutdown complete")
+
+async def aclose_checkpointer() -> None:
+    """Cleanly close the checkpointer connection and clear the singleton.
+
+    Must be awaited during application shutdown (FastAPI lifespan teardown)
+    or test teardown. Awaiting conn.close() stops aiosqlite's background
+    thread and releases the DB file handle; an unawaited close() is a no-op
+    coroutine that leaks the thread and pins the file on Windows.
+
+    Test-suite callers must also call graphs.builder.reset_for_testing():
+    a previously compiled graph holds a reference to the now-closed
+    checkpointer and will fail on next use. The next ainit_checkpointer()
+    re-reads CHECKPOINT_DB_PATH.
+    """
+    global _checkpointer_instance, _checkpointer_conn
+
+    if _checkpointer_conn is not None:
+        logger.info("Closing checkpointer connection")
+        try:
+            await _checkpointer_conn.close()
+        except Exception as e:
+            logger.error(f"Error while closing checkpointer: {e}")
+        finally:
+            _checkpointer_conn = None
+            _checkpointer_instance = None
+            logger.info("Checkpointer shutdown complete")
+    else:
+        _checkpointer_instance = None
 
 
 def thread_config(deal_id: str) -> dict[str, Any]:
@@ -155,14 +191,3 @@ def thread_config(deal_id: str) -> dict[str, Any]:
     (deal_id) and the same key structure without duplicating the dict literal.
     """
     return {"configurable": {"thread_id": deal_id}}
-
-
-def reset_for_testing() -> None:
-    """Close and clear the checkpointer singleton so the next
-    get_checkpointer() call re-reads CHECKPOINT_DB_PATH. Exists for the
-    test suite; production uses close_checkpointer() at shutdown.
-
-    Callers must also call graphs.builder.reset_for_testing(): a
-    previously compiled graph holds a reference to the now-closed
-    checkpointer and will fail on next use."""
-    close_checkpointer()
