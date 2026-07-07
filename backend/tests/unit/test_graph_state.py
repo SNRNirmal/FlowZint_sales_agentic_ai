@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from schemas.graph_state import (
     ApprovalStatus,
-    GraphState,
     RiskScore,
     merge_dicts,
     new_graph_state,
@@ -18,6 +17,11 @@ def test_merge_dicts_accumulates_and_right_wins():
     assert merge_dicts({"a": 1}, {"b": 2}) == {"a": 1, "b": 2}
     assert merge_dicts({"a": 1}, {"a": 9}) == {"a": 9}
 
+    left = {"a": 1}
+    merged = merge_dicts(left, {"b": 2})
+    assert merged is not left
+    assert left == {"a": 1}  # reducer must not mutate the prior channel value
+
 
 def test_merge_dicts_tolerates_none_operands():
     assert merge_dicts(None, {"a": 1}) == {"a": 1}
@@ -25,11 +29,24 @@ def test_merge_dicts_tolerates_none_operands():
     assert merge_dicts(None, None) == {}
 
 
+def test_merge_dicts_is_shallow_right_value_replaces_wholesale():
+    assert merge_dicts({"a": {"x": 1}}, {"a": {"y": 2}}) == {"a": {"y": 2}}
+
+
 def test_risk_score_probability_must_be_within_unit_interval():
-    with pytest.raises(ValidationError):
+    for bad in (-0.1, 1.5):
+        with pytest.raises(ValidationError):
+            RiskScore(
+                approver_id="x",
+                delay_probability=bad,
+                expected_delay_days=1.0,
+                root_cause="r",
+                confidence=0.5,
+            )
+    for ok in (0.0, 1.0):
         RiskScore(
             approver_id="x",
-            delay_probability=1.5,
+            delay_probability=ok,
             expected_delay_days=1.0,
             root_cause="r",
             confidence=0.5,
@@ -43,6 +60,16 @@ def test_approval_status_rejects_unknown_status_literal():
             department="Finance",
             approver_id="finance_raj",
             status="bogus",
+        )
+
+
+def test_approval_status_accepts_all_known_literals():
+    for status in ("pending", "sent", "approved", "rejected", "escalated"):
+        ApprovalStatus(
+            approval_id="ap-1",
+            department="Finance",
+            approver_id="finance_raj",
+            status=status,
         )
 
 
