@@ -7,6 +7,7 @@ from models.approval import Approval
 from models.deal import Deal
 from schemas.graph_state import new_graph_state
 from tests.conftest import as_state, graph_config, make_deal, make_quiet_deal
+from tools.momentum_tool import WEIGHTS
 
 FIVE_APPROVERS = {
     "finance_raj",
@@ -84,9 +85,11 @@ async def test_interrupt_payload_carries_everything_the_reviewer_needs(db_sessio
     snapshot = await graph.aget_state(config)
     payload = snapshot.tasks[0].interrupts[0].value
     assert payload["deal_id"] == "deal-payload"
+    assert {"review_id", "customer_name", "momentum_score", "behavioral_twin_summaries", "timestamp"} <= payload.keys()
     assert set(payload["generated_documents"]) == FIVE_APPROVERS
     assert set(payload["draft_communications"]) == FIVE_APPROVERS
     assert set(payload["risk_scores"]) == FIVE_APPROVERS
+    assert len(payload["approvals"]) == 5
     assert {a["approver_id"] for a in payload["approvals"]} == FIVE_APPROVERS
 
 
@@ -100,11 +103,12 @@ async def test_big_deal_persists_approvals_and_momentum(db_session):
     state = as_state(result)
 
     rows = db_session.query(Approval).filter_by(deal_id="deal-momentum").all()
+    assert len(rows) == 5
     assert {r.approver_id for r in rows} == FIVE_APPROVERS
     assert all(r.status == "pending" for r in rows)
 
     db_session.refresh(orm)
-    assert orm.momentum_score < 100          # 5 pending approvals deduct points
+    assert orm.momentum_score == 100 - 5 * WEIGHTS["pending_approval"]
     assert state.momentum_score == orm.momentum_score  # state and DB in sync
 
 
