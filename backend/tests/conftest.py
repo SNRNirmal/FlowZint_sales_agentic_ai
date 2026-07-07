@@ -30,6 +30,7 @@ from db.database import Base
 from memory.checkpointer import thread_config
 from schemas.graph_state import DealInfo, GraphState
 from schemas.structured_outputs import DelayPrediction, DraftedArtifact, DraftedNudge
+from services.deal_service import ensure_graph_state
 
 # Register every table on Base.metadata before create_all.
 import models.approval  # noqa: F401
@@ -87,13 +88,7 @@ def graph_config(deal_id: str, db) -> dict:
 def as_state(result) -> GraphState:
     """Normalize graph.ainvoke()'s return (GraphState or channel-values
     dict, possibly containing dunder keys like __interrupt__)."""
-    if isinstance(result, GraphState):
-        return result
-    if isinstance(result, dict):
-        return GraphState.model_validate(
-            {k: v for k, v in result.items() if not k.startswith("__")}
-        )
-    raise TypeError(f"Unexpected graph result type: {type(result)!r}")
+    return ensure_graph_state(result)
 
 
 # ---------------------------------------------------------------------------

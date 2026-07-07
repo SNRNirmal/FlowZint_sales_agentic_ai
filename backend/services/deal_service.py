@@ -52,6 +52,18 @@ def _deal_to_info(deal: Deal) -> DealInfo:
     )
 
 
+def ensure_graph_state(result) -> GraphState:
+    """graph.ainvoke() returns the channel-values dict in this LangGraph
+    version, not the Pydantic state. Normalize to the typed GraphState the
+    callers are written against, dropping runtime-only dunder channels
+    (e.g. __interrupt__)."""
+    if isinstance(result, GraphState):
+        return result
+    return GraphState.model_validate(
+        {k: v for k, v in result.items() if not k.startswith("__")}
+    )
+
+
 async def process_deal_via_graph(db: Session, deal: Deal) -> GraphState:
     """Run the full Threshold pipeline for a new deal via the LangGraph graph.
 
@@ -85,7 +97,10 @@ async def process_deal_via_graph(db: Session, deal: Deal) -> GraphState:
     )
 
     graph = build_graph()
-    final_state: GraphState = await graph.ainvoke(initial_state, config=config)
+    result = await graph.ainvoke(initial_state, config=config)
+    # Normalize before the completion log so the counts below read from
+    # the typed state, not a raw channel-values dict.
+    final_state = ensure_graph_state(result)
 
     logger.info(
         "Graph invocation complete",
@@ -146,8 +161,9 @@ async def resume_deal_graph(deal_id: str, action: str, feedback: str = "", revie
     }
 
     # Execute the resume command
-    final_state: GraphState = await graph.ainvoke(Command(resume=resume_payload), config=config)
-    
+    result = await graph.ainvoke(Command(resume=resume_payload), config=config)
+    final_state = ensure_graph_state(result)
+
     logger.info(
         "Graph resume complete",
         extra={"deal_id": deal_id},
