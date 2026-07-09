@@ -11,12 +11,33 @@ for full architecture, agent specs, and demo script.
 
 ## Quick start (backend)
 
+Create `backend/.env` with an LLM API key — either provider works:
+
+```env
+# Option A: Google Gemini (free tier at https://aistudio.google.com/apikey)
+GOOGLE_API_KEY=your-gemini-key
+
+# Option B: Anthropic Claude
+# ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional overrides (defaults: inferred provider, claude-sonnet-4-6 / gemini-2.5-flash)
+# LLM_PROVIDER=gemini
+# LLM_MODEL=gemini-2.5-flash-lite
+```
+
+The provider is inferred from which key is set (Anthropic wins if both;
+set `LLM_PROVIDER` to force). Then:
+
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-pip install -r requirements.txt
-uvicorn main:app --reload
+uv sync
+uv run uvicorn main:app --reload
+```
+
+Seed the demo approver twins once (after first startup created the tables):
+
+```bash
+uv run python behavioral_twins/seed_data.py
 ```
 
 ## Quick start (frontend)

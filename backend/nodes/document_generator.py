@@ -38,11 +38,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
-from config import settings
+from nodes._llm_factory import make_structured_llm
 from schemas.graph_state import GraphState
 from schemas.structured_outputs import DraftedArtifact
 
@@ -61,11 +60,7 @@ _structured_llm = None
 def _get_structured_llm():
     global _structured_llm
     if _structured_llm is None:
-        _structured_llm = ChatAnthropic(
-            model=settings.LLM_MODEL,
-            api_key=settings.ANTHROPIC_API_KEY,
-            max_tokens=600,
-        ).with_structured_output(DraftedArtifact)
+        _structured_llm = make_structured_llm(DraftedArtifact, max_tokens=600)
     return _structured_llm
 
 

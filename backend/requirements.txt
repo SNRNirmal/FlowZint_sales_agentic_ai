@@ -11,5 +11,6 @@ langgraph==1.2.7
 langgraph-checkpoint-sqlite==3.1.0
 langchain-core
 langchain-anthropic
+langchain-google-genai
 langsmith
 aiosqlite>=0.20.0
