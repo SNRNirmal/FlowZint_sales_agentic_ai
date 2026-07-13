@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { useDeal } from "@/hooks/use-deals"
 import { StatusBadge } from "@/components/shared/StatusBadge"
+import { ResolveDialog } from "@/components/deals/ResolveDialog"
 import { MomentumGauge } from "@/components/dashboard/MomentumGauge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -63,6 +64,9 @@ function ApprovalRow({ approval, index }: { approval: Approval; index: number })
         )}
       </div>
       <StatusBadge status={approval.status} />
+      {(approval.status === "sent" || approval.status === "pending") && (
+        <ResolveDialog approvalId={approval.id} approverId={approval.approver_id} />
+      )}
     </motion.div>
   )
 }
