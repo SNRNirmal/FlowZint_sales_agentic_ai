@@ -13,7 +13,7 @@ on LangChain async machinery.
 No imports from agents.* — all business logic is now in tools/.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -25,6 +25,10 @@ from tools.learning_tool import record_outcome_sync
 from services.deal_service import resume_deal_graph
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
+
+# Even a glacial enterprise approval resolves within a year; anything larger
+# is a data-entry error that would poison the twin's rolling average.
+MAX_DELAY_DAYS = 365.0
 
 
 @router.post("/{approval_id}/send")
@@ -64,13 +68,17 @@ async def hold_approval_nudge(approval_id: str, db: Session = Depends(get_db)):
 @router.post("/{approval_id}/resolve")
 def resolve_approval(
     approval_id: str,
-    actual_delay_days: float,
-    artifact_format_used: str,
-    delay_reason: str = "",
+    actual_delay_days: float = Query(..., ge=0, le=MAX_DELAY_DAYS, allow_inf_nan=False),
+    artifact_format_used: str = Query(..., min_length=1, max_length=100),
+    delay_reason: str = Query("", max_length=500),
     db: Session = Depends(get_db),
 ):
     """Marks an approval as approved and triggers the Learning Agent to
-    update that approver's Behavioral Twin."""
+    update that approver's Behavioral Twin.
+
+    Bounds mirror RecordOutcomeInput (tools/learning_tool.py): a negative,
+    infinite, or NaN delay would flow into update_twin_after_deal and
+    corrupt avg_turnaround_days / fastest_responding_format."""
 
     approval = db.query(Approval).filter(Approval.id == approval_id).first()
     if not approval:

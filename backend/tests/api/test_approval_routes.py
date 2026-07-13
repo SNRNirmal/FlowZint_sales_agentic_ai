@@ -145,3 +145,52 @@ def test_resolve_missing_approval_is_404(client, monkeypatch):
 
 def test_resolve_missing_required_params_is_422(client, seeded_approval):
     assert client.post(f"/approvals/{seeded_approval}/resolve").status_code == 422
+
+
+@pytest.mark.parametrize("bad_delay", ["-1", "-0.001", "-inf", "inf", "nan", "366"])
+def test_resolve_out_of_range_delay_is_422_and_records_nothing(
+    client, db_session, seeded_approval, monkeypatch, bad_delay
+):
+    """Negative / non-finite / absurd delays must die at validation, before
+    they can reach the twin's rolling average."""
+    outcome_calls = {}
+    monkeypatch.setattr(
+        "routes.approvals.record_outcome_sync", lambda db, **kw: outcome_calls.update(kw)
+    )
+
+    resp = client.post(
+        f"/approvals/{seeded_approval}/resolve",
+        params={"actual_delay_days": bad_delay, "artifact_format_used": "one-pager"},
+    )
+
+    assert resp.status_code == 422
+    assert outcome_calls == {}                                    # learning untouched
+    db_session.expire_all()
+    assert db_session.get(Approval, "ap-1").status == "pending"   # row untouched
+
+
+def test_resolve_accepts_zero_delay(client, seeded_approval, monkeypatch):
+    """0 is a legal value (same-day approval) — the bound is ge, not gt."""
+    monkeypatch.setattr("routes.approvals.record_outcome_sync", lambda db, **kw: None)
+    monkeypatch.setattr("routes.approvals.compute_momentum_score", lambda db, deal_id: 85)
+
+    resp = client.post(
+        f"/approvals/{seeded_approval}/resolve",
+        params={"actual_delay_days": 0, "artifact_format_used": "one-pager"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "approved"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"actual_delay_days": 1.0, "artifact_format_used": ""},
+        {"actual_delay_days": 1.0, "artifact_format_used": "x" * 101},
+        {"actual_delay_days": 1.0, "artifact_format_used": "pdf", "delay_reason": "y" * 501},
+    ],
+    ids=["empty-format", "overlong-format", "overlong-reason"],
+)
+def test_resolve_bad_string_params_are_422(client, seeded_approval, params):
+    assert client.post(f"/approvals/{seeded_approval}/resolve", params=params).status_code == 422
