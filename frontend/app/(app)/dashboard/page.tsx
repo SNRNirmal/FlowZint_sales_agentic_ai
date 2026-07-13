@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useDashboard } from "@/hooks/use-dashboard"
+import { usePendingApprovals } from "@/hooks/use-pending-approvals"
 import { StatCard } from "@/components/dashboard/StatCard"
 import { MomentumGauge } from "@/components/dashboard/MomentumGauge"
 import { RecentDeals } from "@/components/dashboard/RecentDeals"
@@ -22,6 +23,7 @@ import { useAuthStore } from "@/store/useAuthStore"
 
 export default function DashboardPage() {
   const { data, isLoading, error, refetch, isFetching } = useDashboard()
+  const { data: pending } = usePendingApprovals()
   const user = useAuthStore((s) => s.user)
 
   const totalDeals = data?.total_deals ?? 0
@@ -29,7 +31,6 @@ export default function DashboardPage() {
   const avgScore = data?.avg_momentum_score ?? 0
   const deals = data?.deals ?? []
   const twins = data?.approver_profiles ?? []
-  const pendingApprovals = deals.filter((d) => d.status === "active").length
 
   return (
     <div className="space-y-6">
@@ -80,10 +81,10 @@ export default function DashboardPage() {
         <StatCard
           index={1}
           label="Pending Approvals"
-          value={isLoading ? "—" : pendingApprovals}
+          value={pending ? pending.length : "—"}
           icon={<ClipboardCheck className="w-4 h-4" />}
           delta="Awaiting review"
-          deltaType={pendingApprovals > 0 ? "negative" : "positive"}
+          deltaType={(pending?.length ?? 0) > 0 ? "negative" : "positive"}
         />
         <StatCard
           index={2}
@@ -153,7 +154,7 @@ export default function DashboardPage() {
 
       {/* Error state */}
       {error && (
-        <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 text-sm text-destructive">
+        <div role="alert" className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 text-sm text-destructive">
           Failed to load dashboard data. The backend may be offline.{" "}
           <button onClick={() => refetch()} className="underline ml-1">Retry</button>
         </div>
