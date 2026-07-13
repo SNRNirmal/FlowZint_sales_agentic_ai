@@ -9,10 +9,6 @@ import {
   Briefcase,
   ClipboardCheck,
   Brain,
-  BarChart3,
-  GitBranch,
-  Settings,
-  Activity,
   ChevronLeft,
   ChevronRight,
   Zap,
@@ -25,13 +21,6 @@ const NAV_ITEMS = [
   { label: "Deals",            href: "/deals",      icon: Briefcase },
   { label: "Human Review",     href: "/review",     icon: ClipboardCheck },
   { label: "Behavioral Twins", href: "/twins",      icon: Brain },
-  { label: "Analytics",        href: "/analytics",  icon: BarChart3 },
-  { label: "Timeline",         href: "/timeline",   icon: GitBranch },
-]
-
-const BOTTOM_ITEMS = [
-  { label: "System Health",    href: "/system",     icon: Activity },
-  { label: "Settings",         href: "/settings",   icon: Settings },
 ]
 
 interface SidebarProps {
@@ -85,15 +74,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
         {/* Bottom Nav */}
         <div className="flex flex-col gap-0.5 p-2 border-t border-border">
-          {BOTTOM_ITEMS.map((item) => (
-            <NavItem
-              key={item.href}
-              item={item}
-              active={pathname === item.href}
-              collapsed={collapsed}
-            />
-          ))}
-
           {/* Collapse toggle */}
           <button
             onClick={onToggle}
