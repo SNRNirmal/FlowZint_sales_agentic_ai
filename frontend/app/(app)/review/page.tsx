@@ -4,8 +4,13 @@ import * as React from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Play, ClipboardCheck, Loader2, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react"
 import { useMutation } from "@tanstack/react-query"
-import { triggerDemoDeal, sendApprovalNudge, holdApprovalNudge } from "@/lib/api"
-import { ReviewCard } from "@/components/review/ReviewCard"
+import { triggerDemoDeal } from "@/lib/api"
+import { useSendNudge, useHoldNudge } from "@/hooks/use-review-actions"
+import {
+  loadReviewSession, saveReviewSession, clearReviewSession,
+} from "@/hooks/use-review-session"
+import { ReviewCard, type CardStatus } from "@/components/review/ReviewCard"
+import { PersistedQueue } from "@/components/review/PersistedQueue"
 import { MomentumGauge } from "@/components/dashboard/MomentumGauge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { Button } from "@/components/ui/button"
@@ -51,22 +56,88 @@ const DEMO_SCENARIOS = [
 export default function ReviewPage() {
   const [scenario, setScenario] = React.useState("0")
   const [result, setResult] = React.useState<WebhookResponse | null>(null)
+  const [statuses, setStatuses] = React.useState<Record<string, CardStatus>>({})
+  const [errors, setErrors] = React.useState<Record<string, string>>({})
+
+  // Hydrate the last run (and settled statuses) after mount. Reading
+  // sessionStorage during render would make the server-rendered HTML (always
+  // the empty state) mismatch the first client render.
+  React.useEffect(() => {
+    const session = loadReviewSession()
+    if (session) {
+      setResult(session.result)
+      setStatuses(session.statuses)
+    }
+  }, [])
+
+  // Late mutation settles must persist against the *current* run, not the one
+  // captured by the click-time closure — otherwise a settle after Clear or a
+  // new Run would resurrect or overwrite the wrong session mirror.
+  const resultRef = React.useRef(result)
+  React.useEffect(() => {
+    resultRef.current = result
+  }, [result])
+
+  const sendMutation = useSendNudge()
+  const holdMutation = useHoldNudge()
+
+  const persist = (nextResult: WebhookResponse, nextStatuses: Record<string, CardStatus>) => {
+    const settled = Object.fromEntries(
+      Object.entries(nextStatuses).filter(([, s]) => s === "sent" || s === "held"),
+    ) as Record<string, "sent" | "held">
+    saveReviewSession({ result: nextResult, statuses: settled })
+  }
 
   const runMutation = useMutation({
     mutationFn: () => triggerDemoDeal(DEMO_SCENARIOS[parseInt(scenario)].payload),
-    onSuccess: (data) => setResult(data),
+    onSuccess: (data) => {
+      setResult(data)
+      setStatuses({})
+      setErrors({})
+      persist(data, {})
+    },
   })
 
-  const handleSend = async (id: string, text: string) => {
-    await sendApprovalNudge(id, text)
+  const setCardStatus = (id: string, status: CardStatus, errorMsg?: string) => {
+    setStatuses((prev) => {
+      const next = { ...prev, [id]: status }
+      const current = resultRef.current
+      if (current && current.drafted_actions.some((a) => a.approval_id === id)) {
+        persist(current, next)
+      }
+      return next
+    })
+    setErrors((prev) => ({ ...prev, [id]: errorMsg ?? "" }))
   }
 
-  const handleHold = async (id: string) => {
-    await holdApprovalNudge(id)
+  // mutateAsync, not mutate-with-callbacks: TanStack Query drops per-mutate
+  // callbacks when a later mutate supersedes an in-flight one on the same
+  // mutation instance, which would strand the earlier card in "sending".
+  const handleSend = (id: string, text: string) => {
+    setCardStatus(id, "sending")
+    sendMutation
+      .mutateAsync({ id, text })
+      .then(() => setCardStatus(id, "sent"))
+      .catch((err) => setCardStatus(id, "error", err instanceof Error ? err.message : "Send failed"))
   }
 
-  const completedCount = 0 // In a real app, track per-card status
+  const handleHold = (id: string) => {
+    setCardStatus(id, "holding")
+    holdMutation
+      .mutateAsync(id)
+      .then(() => setCardStatus(id, "held"))
+      .catch((err) => setCardStatus(id, "error", err instanceof Error ? err.message : "Hold failed"))
+  }
+
+  const handleClear = () => {
+    setResult(null)
+    setStatuses({})
+    setErrors({})
+    clearReviewSession()
+  }
+
   const totalCount = result?.drafted_actions.length ?? 0
+  const settledCount = Object.values(statuses).filter((s) => s === "sent" || s === "held").length
 
   return (
     <div className="space-y-6">
@@ -116,7 +187,7 @@ export default function ReviewPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setResult(null)}
+              onClick={handleClear}
               className="gap-2 text-muted-foreground"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -141,7 +212,7 @@ export default function ReviewPage() {
             <div>
               <p className="text-sm font-medium text-foreground">Threshold pipeline running…</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Analyzing deal, building behavioral twin profiles, drafting artifacts and nudges.
+                Detecting approvals, predicting friction, drafting artifacts and nudges.
               </p>
             </div>
           </motion.div>
@@ -150,7 +221,7 @@ export default function ReviewPage() {
 
       {/* Error state */}
       {runMutation.isError && (
-        <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 flex items-center gap-3">
+        <div role="alert" className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 flex items-center gap-3">
           <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
           <p className="text-sm text-destructive">
             Pipeline failed. Is the backend running at localhost:8000?
@@ -181,7 +252,7 @@ export default function ReviewPage() {
               <div className="ml-auto flex items-center gap-2">
                 <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  {totalCount} action{totalCount !== 1 ? "s" : ""} awaiting review
+                  {settledCount}/{totalCount} actioned
                 </span>
               </div>
             </div>
@@ -192,6 +263,8 @@ export default function ReviewPage() {
                 <ReviewCard
                   key={action.approval_id}
                   action={action}
+                  status={statuses[action.approval_id] ?? "idle"}
+                  error={errors[action.approval_id]}
                   onSend={handleSend}
                   onHold={handleHold}
                   index={i}
@@ -218,6 +291,9 @@ export default function ReviewPage() {
           </p>
         </motion.div>
       )}
+
+      {/* Persisted layer: pending approvals from earlier runs (server truth) */}
+      <PersistedQueue excludeIds={result?.drafted_actions.map((a) => a.approval_id) ?? []} />
     </div>
   )
 }

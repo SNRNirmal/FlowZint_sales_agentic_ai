@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { fetchDeals, fetchDeal } from "@/lib/api"
+import { queryKeys } from "@/lib/query-keys"
 
 export function useDeals() {
   return useQuery({
-    queryKey: ["deals"],
+    queryKey: queryKeys.deals,
     queryFn: fetchDeals,
     refetchInterval: 15_000,
   })
@@ -11,7 +12,7 @@ export function useDeals() {
 
 export function useDeal(dealId: string) {
   return useQuery({
-    queryKey: ["deal", dealId],
+    queryKey: queryKeys.deal(dealId),
     queryFn: () => fetchDeal(dealId),
     enabled: !!dealId,
   })

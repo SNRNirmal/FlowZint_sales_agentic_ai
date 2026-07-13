@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { render, screen } from "@testing-library/react"
-import ApproverCard from "@/components/ApproverCard"
+import { ApproverCard } from "@/components/twins/ApproverCard"
 
 const twin = {
   approver_id: "finance_raj",
@@ -9,6 +9,7 @@ const twin = {
   fastest_responding_format: "one-pager",
   slowest_trigger: "missing discount justification",
   total_deals_reviewed: 14,
+  last_updated: "2026-07-10T09:00:00Z",
 }
 
 describe("ApproverCard", () => {
@@ -28,5 +29,17 @@ describe("ApproverCard", () => {
   it("shows the sample size behind the twin", () => {
     render(<ApproverCard twin={twin} />)
     expect(screen.getByText(/14 deals reviewed/)).toBeInTheDocument()
+  })
+
+  it("shows when the Learning Agent last updated the twin", () => {
+    render(<ApproverCard twin={twin} />)
+    const updated = screen.getByText(/Updated/)
+    expect(updated).toBeInTheDocument()
+    expect(updated.textContent).not.toMatch(/Invalid Date/)
+  })
+
+  it("falls back gracefully for an unparseable date", () => {
+    render(<ApproverCard twin={{ ...twin, last_updated: "not-a-date" }} />)
+    expect(screen.getByText(/Updated recently/)).toBeInTheDocument()
   })
 })

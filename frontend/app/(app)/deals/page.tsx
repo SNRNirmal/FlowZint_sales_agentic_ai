@@ -90,27 +90,32 @@ export default function DealsPage() {
         </div>
       )}
 
-      {!isLoading && !error && deals && (
+      {/* A failed background poll sets `error` while cached `data` survives.
+          Error and content render independently so a hiccup never blanks an
+          already-rendered list. */}
+      {deals && deals.length > 0 && (
         <div className="space-y-2">
-          {deals.length === 0 ? (
-            <EmptyState
-              icon={<Briefcase className="w-5 h-5" />}
-              title="No deals yet"
-              description="Trigger a deal via the Human Review page to see it appear here."
-              action={
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/review">Go to Review Queue</Link>
-                </Button>
-              }
-            />
-          ) : (
-            deals.map((deal, i) => <DealRow key={deal.id} deal={deal} index={i} />)
-          )}
+          {deals.map((deal, i) => <DealRow key={deal.id} deal={deal} index={i} />)}
         </div>
       )}
 
+      {/* Only claim "no deals" for a loaded empty list — never when data is
+          merely unavailable. */}
+      {!isLoading && !error && deals && deals.length === 0 && (
+        <EmptyState
+          icon={<Briefcase className="w-5 h-5" />}
+          title="No deals yet"
+          description="Trigger a deal via the Human Review page to see it appear here."
+          action={
+            <Button asChild size="sm" variant="outline">
+              <Link href="/review">Go to Review Queue</Link>
+            </Button>
+          }
+        />
+      )}
+
       {error && (
-        <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 text-sm text-destructive">
+        <div role="alert" className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 text-sm text-destructive">
           Failed to load deals.{" "}
           <button onClick={() => refetch()} className="underline">Retry</button>
         </div>
