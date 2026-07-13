@@ -22,10 +22,6 @@ const ROUTE_LABELS: Record<string, string> = {
   "/deals":      "Deals",
   "/review":     "Human Review",
   "/twins":      "Behavioral Twins",
-  "/analytics":  "Analytics",
-  "/timeline":   "Timeline",
-  "/system":     "System Health",
-  "/settings":   "Settings",
 }
 
 function useBreadcrumbs() {
