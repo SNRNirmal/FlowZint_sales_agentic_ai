@@ -146,17 +146,7 @@ async def approval_tracking_node(state: GraphState, config: RunnableConfig) -> d
             extra={"deal_id": deal.deal_id, "error": str(exc)},
             exc_info=True,
         )
-        return {
-            "current_node": "approval_tracking",
-            "audit_log": [
-                {
-                    "event": "approval_tracking_error",
-                    "deal_id": deal.deal_id,
-                    "error": str(exc),
-                    "node": "approval_tracking",
-                }
-            ],
-        }
+        raise
 
     finally:
         if owns_session:

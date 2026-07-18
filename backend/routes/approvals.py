@@ -31,6 +31,17 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 MAX_DELAY_DAYS = 365.0
 
 
+@router.get("/")
+def list_approvals(db: Session = Depends(get_db)):
+    """Return all approvals across all deals.
+
+    Eliminates the N+1 fan-out pattern the frontend used to perform
+    (GET /deals/ + N × GET /deals/{id}). The frontend filters by status
+    client-side using the approval.status field.
+    """
+    return db.query(Approval).all()
+
+
 @router.post("/{approval_id}/send")
 async def send_approval_nudge(approval_id: str, nudge_text: str, db: Session = Depends(get_db)):
     """Human Review Checkpoint: 'Send' button. Nothing reaches a real

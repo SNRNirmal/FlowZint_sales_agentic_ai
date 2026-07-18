@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { fetchDeal, fetchDeals } from "@/lib/api"
+import { fetchDeals, fetchAllApprovals } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
 import type { Approval, Deal } from "@/types/deal"
 
@@ -8,20 +8,21 @@ export interface PendingApproval {
   deal: Deal
 }
 
-// The backend has no cross-deal approvals endpoint; this fan-out over
-// GET /deals/ + GET /deals/{id} is the only honest source. N+1 is
-// acknowledged and fine at demo scale (see design doc Step 2).
+// Returns all pending approvals across all deals efficiently using the
+// /approvals/ endpoint and joining with the /deals/ endpoint.
 export function usePendingApprovals() {
   return useQuery({
     queryKey: queryKeys.pendingApprovals,
     queryFn: async (): Promise<PendingApproval[]> => {
-      const deals = await fetchDeals()
-      const details = await Promise.all(deals.map((d) => fetchDeal(d.id)))
-      return details.flatMap((detail) =>
-        detail.approvals
-          .filter((a) => a.status === "pending")
-          .map((approval) => ({ approval, deal: detail.deal })),
-      )
+      const [deals, approvals] = await Promise.all([
+        fetchDeals(),
+        fetchAllApprovals(),
+      ])
+      const dealsById = new Map(deals.map((d) => [d.id, d]))
+      return approvals
+        .filter((a) => a.status === "pending")
+        .map((approval) => ({ approval, deal: dealsById.get(approval.deal_id) }))
+        .filter((p): p is PendingApproval => p.deal !== undefined)
     },
     refetchInterval: 30_000,
   })

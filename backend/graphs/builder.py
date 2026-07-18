@@ -51,6 +51,9 @@ from nodes.communication_planner import communication_planner_node
 from nodes.delay_intelligence import delay_intelligence_node
 from nodes.document_generator import document_generator_node
 from nodes.human_review import human_review_node
+from nodes.approval_tracking import approval_tracking_node
+from nodes.learning import learning_node
+from nodes.rejection_handler import rejection_handler_node
 from schemas.graph_state import GraphState
 
 logger = logging.getLogger("threshold.graphs.builder")
@@ -94,6 +97,9 @@ def build_graph():
     graph.add_node("document_generator", document_generator_node)
     graph.add_node("communication_planner", communication_planner_node)
     graph.add_node("human_review", human_review_node)
+    graph.add_node("approval_tracking", approval_tracking_node)
+    graph.add_node("learning", learning_node)
+    graph.add_node("rejection_handler", rejection_handler_node)
 
     # -----------------------------------------------------------------------
     # Entry point
@@ -132,10 +138,16 @@ def build_graph():
         "human_review",
         route_after_human_review,
         {
-            END: END,
+            "approval_tracking": "approval_tracking",
+            "rejection_handler": "rejection_handler",
             "document_generator": "document_generator",
+            END: END,
         }
     )
+
+    graph.add_edge("approval_tracking", "learning")
+    graph.add_edge("learning", END)
+    graph.add_edge("rejection_handler", END)
 
     # -----------------------------------------------------------------------
     # Compile with checkpointing

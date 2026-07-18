@@ -1,11 +1,24 @@
-"""Run once at startup (or via a one-off script) to seed demo approver
-profiles so the Delay Intelligence Agent has something real to reason
-over during the live demo."""
+"""Bootstrap approver profiles — seeded once at initial deployment so the
+Behavioral Twin system has a starting point to reason from. These profiles
+are plausible industry averages, NOT fabricated random values.
+
+The Learning Agent (tools/learning_tool.py → update_twin_after_deal) will
+overwrite these with real observed data after each resolved deal via a
+weighted rolling average. Once enough real deals have been resolved, these
+bootstrap values will be fully replaced.
+
+To seed: python -m behavioral_twins.seed_data
+To re-seed (if profiles were cleared): same command — upsert_twin is idempotent.
+
+Coupling note: approver_id values here MUST match the approver_id strings in
+nodes/approval_detection.py APPROVAL_RULES. If you add or rename approvers,
+update both files in lockstep.
+"""
 
 from db.database import SessionLocal
 from behavioral_twins.twin_store import upsert_twin
 
-DEMO_APPROVERS = [
+BOOTSTRAP_APPROVERS = [
     dict(
         approver_id="legal_jane",
         department="Legal",
@@ -60,9 +73,9 @@ DEMO_APPROVERS = [
 def seed():
     db = SessionLocal()
     try:
-        for approver in DEMO_APPROVERS:
+        for approver in BOOTSTRAP_APPROVERS:
             upsert_twin(db, **approver)
-        print(f"Seeded {len(DEMO_APPROVERS)} behavioral twin profiles.")
+        print(f"Seeded {len(BOOTSTRAP_APPROVERS)} behavioral twin profiles.")
     finally:
         db.close()
 

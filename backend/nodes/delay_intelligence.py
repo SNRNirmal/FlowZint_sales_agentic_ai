@@ -43,6 +43,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from config import settings
+
 from langchain_core.runnables import RunnableConfig
 
 from memory.long_term_store import get_department_pattern
@@ -125,6 +127,8 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
         - ``current_node``: "delay_intelligence"
         - ``agent_outputs``: structured reasoning result
     """
+    from debug_logger import dl
+    dl.log_step(6, "Entering delay_intelligence node.", node="delay_intelligence", input_keys=["deal", "approvals", "behavioral_twins"])
     deal = state.deal
     approvals = state.approvals
     twins = state.behavioral_twins
@@ -156,9 +160,11 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
         twin_contexts: dict[str, str] = {}
         for approval in approvals:
             twin = twins.get(approval.approver_id)
+            dl.log_step(6.1, f"Building twin context for {approval.approver_id}", node="delay_intelligence")
             twin_contexts[approval.approver_id] = await asyncio.to_thread(
                 _build_twin_context, twin, approval.department, db, deal.deal_id
             )
+            dl.log_step(6.2, f"Built twin context for {approval.approver_id}", node="delay_intelligence")
 
         async def predict_one(approval):
             twin = twins.get(approval.approver_id)
@@ -174,25 +180,35 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
             )
 
             try:
+                dl.log_step(6.3, f"Awaiting llm.ainvoke for {approval.approver_id}", node="delay_intelligence")
                 prediction: DelayPrediction = await llm.ainvoke(
                     [("system", SYSTEM_PROMPT), ("user", user_prompt)]
                 )
+                dl.log_step(6.4, f"Finished llm.ainvoke for {approval.approver_id}", node="delay_intelligence")
             except Exception as exc:
-                logger.error(
-                    "LLM structured prediction failed — using historical fallback",
+                logger.exception(
+                    "LLM provider unavailable",
                     extra={
+                        "node": "delay_intelligence",
                         "deal_id": deal.deal_id,
                         "approver_id": approval.approver_id,
-                        "error": str(exc),
                     },
                 )
-                fallback_days = twin.avg_turnaround_days if twin else 3.0
-                prediction = DelayPrediction(
-                    delay_probability=0.5,
-                    expected_delay_days=fallback_days,
-                    root_cause="LLM prediction unavailable; used historical/org average as fallback.",
-                    confidence=0.3,
-                )
+                
+                if settings.ALLOW_LLM_FALLBACKS:
+                    fallback_days = twin.avg_turnaround_days if twin else 3.0
+                    prediction = DelayPrediction(
+                        delay_probability=0.5,
+                        expected_delay_days=fallback_days,
+                        root_cause="LLM prediction unavailable; used historical/org average as fallback.",
+                        confidence=0.3,
+                        metadata={
+                            "llm_available": False,
+                            "generated_by": "fallback",
+                        }
+                    )
+                else:
+                    raise RuntimeError(f"LLM unavailable in delay_intelligence") from exc
 
             return approval.approver_id, RiskScore(
                 approver_id=approval.approver_id,
@@ -200,6 +216,7 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
                 expected_delay_days=prediction.expected_delay_days,
                 root_cause=prediction.root_cause,
                 confidence=prediction.confidence,
+                metadata=prediction.metadata,
             )
 
         logger.info(
@@ -207,10 +224,12 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
             extra={"deal_id": deal.deal_id, "approval_count": len(approvals)},
         )
 
+        dl.log_step(6.5, "Awaiting asyncio.gather for predict_one", node="delay_intelligence")
         results = await asyncio.gather(
             *(predict_one(approval) for approval in approvals),
             return_exceptions=True,
         )
+        dl.log_step(6.6, "Finished asyncio.gather for predict_one", node="delay_intelligence")
 
         risk_scores: dict[str, RiskScore] = {}
         high_risk_approvers: list[str] = []
@@ -219,15 +238,7 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
             approver_id_for_error = approvals[i].approver_id
 
             if isinstance(item, Exception):
-                logger.error(
-                    "Delay prediction task raised an unhandled exception",
-                    extra={
-                        "deal_id": deal.deal_id,
-                        "approver_id": approver_id_for_error,
-                        "error": str(item),
-                    },
-                )
-                continue
+                raise RuntimeError("Parallel task failed in delay_intelligence") from item
 
             approver_id, score = item
             risk_scores[approver_id] = score
@@ -253,6 +264,7 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
             extra={"deal_id": deal.deal_id, "predictions_made": len(risk_scores)},
         )
 
+        dl.log_step(7, "Delay intelligence completed successfully.", node="delay_intelligence", output_keys=["risk_scores", "audit_log", "agent_outputs"])
         return {
             "risk_scores": risk_scores,
             "audit_log": [audit_entry],
@@ -272,17 +284,7 @@ async def delay_intelligence_node(state: GraphState, config: RunnableConfig) -> 
             extra={"deal_id": deal.deal_id, "error": str(exc)},
             exc_info=True,
         )
-        return {
-            "audit_log": [
-                {
-                    "event": "delay_intelligence_error",
-                    "deal_id": deal.deal_id,
-                    "error": str(exc),
-                    "node": "delay_intelligence",
-                }
-            ],
-            "current_node": "delay_intelligence",
-        }
+        raise
     finally:
         if owns_session:
             db.close()

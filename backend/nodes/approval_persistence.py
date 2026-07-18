@@ -137,6 +137,8 @@ async def approval_persistence_node(state: GraphState, config: RunnableConfig) -
             extra={"deal_id": deal.deal_id, "count": len(approvals)},
         )
 
+        from debug_logger import dl
+        dl.log_step(12, "Saving approval tracking.", node="approval_persistence")
         # Call via .coroutine() so the db session is passed directly,
         # bypassing InjectedToolArg resolution which only applies to ainvoke().
         result = await persist_approvals.coroutine(
@@ -144,6 +146,7 @@ async def approval_persistence_node(state: GraphState, config: RunnableConfig) -
             approvals=approvals,
             db=db,
         )
+        dl.log_step(13, "Database commit completed.", node="approval_persistence")
 
         if result.success:
             logger.info(
@@ -223,17 +226,7 @@ async def approval_persistence_node(state: GraphState, config: RunnableConfig) -
             extra={"deal_id": deal.deal_id, "error": str(exc)},
             exc_info=True,
         )
-        return {
-            "current_node": "approval_persistence",
-            "audit_log": [
-                {
-                    "event": "approval_persistence_error",
-                    "deal_id": deal.deal_id,
-                    "error": str(exc),
-                    "node": "approval_persistence",
-                }
-            ],
-        }
+        raise
 
     finally:
         if owns_session:

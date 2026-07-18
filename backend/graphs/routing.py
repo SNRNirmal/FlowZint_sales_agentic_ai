@@ -133,17 +133,17 @@ def route_after_human_review(state: GraphState) -> str:
 
     if action == "approve":
         logger.info(
-            "Human approved AI drafts — completing pipeline",
+            "Human approved AI drafts — continuing to approval tracking",
             extra={"deal_id": state.deal.deal_id},
         )
-        return END
+        return "approval_tracking"
     
     if action == "reject":
         logger.info(
-            "Human rejected AI drafts — pipeline aborted",
+            "Human rejected AI drafts — handling rejection",
             extra={"deal_id": state.deal.deal_id},
         )
-        return END
+        return "rejection_handler"
 
     if action == "request_changes":
         logger.info(

@@ -35,6 +35,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from config import settings
+
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
@@ -106,6 +108,8 @@ async def communication_planner_node(state: GraphState, config: RunnableConfig) 
         - ``current_node``: "communication_planner"
         - ``agent_outputs``: structured reasoning result
     """
+    from debug_logger import dl
+    dl.log_step(10, "Entering communication_planner node.", node="communication_planner", input_keys=["deal", "approvals", "risk_scores"])
     deal = state.deal
     approvals = state.approvals
     risk_scores = state.risk_scores
@@ -145,20 +149,29 @@ async def communication_planner_node(state: GraphState, config: RunnableConfig) 
             )
             return approval.approver_id, drafted, urgency, None
         except Exception as exc:
-            logger.error(
-                "Nudge drafting failed — using fallback message",
+            logger.exception(
+                "LLM provider unavailable",
                 extra={
+                    "node": "communication_planner",
                     "deal_id": deal.deal_id,
                     "approver_id": approval.approver_id,
-                    "error": str(exc),
                 },
             )
-            return (
-                approval.approver_id,
-                _fallback_nudge(approval.approver_id, approval.department, deal),
-                urgency,
-                str(exc),
-            )
+            
+            if settings.ALLOW_LLM_FALLBACKS:
+                result = _fallback_nudge(approval.approver_id, approval.department, deal)
+                result.metadata = {
+                    "llm_available": False,
+                    "generated_by": "fallback",
+                }
+                return (
+                    approval.approver_id,
+                    result,
+                    urgency,
+                    str(exc),
+                )
+            else:
+                raise RuntimeError(f"LLM unavailable in communication_planner") from exc
 
     logger.info(
         "Drafting nudges concurrently",
@@ -170,20 +183,17 @@ async def communication_planner_node(state: GraphState, config: RunnableConfig) 
     nudges: dict[str, str] = {}
     high_urgency: list[str] = []
     failed: list[str] = []
+    agent_metadata: dict[str, dict] = {}
 
     for i, item in enumerate(results):
         approver_id_for_error = approvals[i].approver_id
 
         if isinstance(item, Exception):
-            logger.error(
-                "Nudge drafting task raised an unhandled exception",
-                extra={"deal_id": deal.deal_id, "approver_id": approver_id_for_error, "error": str(item)},
-            )
-            failed.append(approver_id_for_error)
-            continue
+            raise RuntimeError("Parallel task failed in communication_planner") from item
 
         approver_id, drafted, urgency, error = item
         nudges[approver_id] = drafted.message
+        agent_metadata[approver_id] = drafted.metadata
         if urgency == "high":
             high_urgency.append(approver_id)
         if error:
@@ -210,9 +220,10 @@ async def communication_planner_node(state: GraphState, config: RunnableConfig) 
         extra={"deal_id": deal.deal_id, "nudges_drafted": len(nudges), "high_urgency": len(high_urgency)},
     )
 
+    dl.log_step(11, "Communication planner completed successfully.", node="communication_planner", output_keys=["nudges", "audit_log", "agent_outputs"])
     return {
         "nudges": nudges,
         "audit_log": [audit_entry],
         "current_node": "communication_planner",
-        "agent_outputs": {"communication_planner": result.model_dump()},
+        "agent_outputs": agent_metadata,
     }

@@ -1,18 +1,28 @@
 import { z } from "zod"
 import {
+  AnalyticsSummarySchema,
+  ApprovalSchema,
   DashboardSummarySchema,
   DealDetailSchema,
   DealSchema,
+  DealTimelineSchema,
   HoldResultSchema,
   ResolveResultSchema,
   SendResultSchema,
-  WebhookResponseSchema,
+  WebhookAcceptedSchema,
+  WebhookResultSchema,
+  DealStatusSchema,
+  type AnalyticsSummary,
   type DashboardSummary,
   type Deal,
   type DealDetail,
+  type DealTimeline,
   type ResolvePayload,
   type ResolveResult,
-  type WebhookResponse,
+  type WebhookAccepted,
+  type WebhookResult,
+  type DealStatus,
+  Approval,
 } from "@/types/api"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -28,7 +38,7 @@ export class ApiError extends Error {
   }
 }
 
-async function apiFetch<S extends z.ZodTypeAny>(
+export async function apiFetch<S extends z.ZodTypeAny>(
   path: string,
   schema: S,
   options?: RequestInit,
@@ -98,8 +108,26 @@ export const resolveApproval = (approvalId: string, payload: ResolvePayload): Pr
   )
 
 // ─── Webhooks / Demo ─────────────────────────────────────────────────────────
-export const triggerDemoDeal = (payload: Record<string, unknown>): Promise<WebhookResponse> =>
-  apiFetch("/webhooks/crm", WebhookResponseSchema, {
+export const triggerDemoDeal = (payload: Record<string, unknown>): Promise<WebhookAccepted> =>
+  apiFetch("/webhooks/crm", WebhookAcceptedSchema, {
     method: "POST",
     body: JSON.stringify(payload),
   })
+
+export const fetchDealStatus = (dealId: string): Promise<DealStatus> =>
+  apiFetch(`/deals/${dealId}/status`, DealStatusSchema)
+
+export const fetchDealResult = (dealId: string): Promise<WebhookResult> =>
+  apiFetch(`/deals/${dealId}/result`, WebhookResultSchema)
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+export const fetchAnalytics = (): Promise<AnalyticsSummary> =>
+  apiFetch("/dashboard/analytics", AnalyticsSummarySchema)
+
+// ─── Timeline ────────────────────────────────────────────────────────────────
+export const fetchDealTimeline = (dealId: string): Promise<DealTimeline> =>
+  apiFetch(`/deals/${dealId}/timeline`, DealTimelineSchema)
+
+// ─── Cross-deal approvals ─────────────────────────────────────────────────────
+export const fetchAllApprovals = (): Promise<Approval[]> =>
+  apiFetch("/approvals/", z.array(ApprovalSchema))

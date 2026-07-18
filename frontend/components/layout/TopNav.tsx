@@ -22,6 +22,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/deals":      "Deals",
   "/review":     "Human Review",
   "/twins":      "Behavioral Twins",
+  "/timeline":   "Execution Timeline",
 }
 
 function useBreadcrumbs() {
@@ -76,7 +77,6 @@ export function TopNav() {
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
           <Bell className="w-4 h-4" />
-          <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-primary" />
         </Button>
 
         <DropdownMenu>

@@ -4,13 +4,16 @@ import * as React from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Send, PauseCircle, ChevronDown, ChevronUp,
-  AlertTriangle, Brain, FileText, MessageSquare, CheckCircle2
+  AlertTriangle, Brain, FileText, MessageSquare, CheckCircle2,
+  ArrowRight
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { DraftedAction } from "@/types/review"
+import { getApproverDisplay } from "@/lib/approver-names"
+import { TwinIntelligencePanel } from "./TwinIntelligencePanel"
 
 export type CardStatus = "idle" | "sending" | "holding" | "sent" | "held" | "error"
 
@@ -61,8 +64,12 @@ export function ReviewCard({ action, status, error, onSend, onHold, index }: Rev
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-foreground">{action.approver_id}</span>
-            <Badge variant="outline" className="text-xs px-2 py-0">{action.department}</Badge>
+            <span className="text-sm font-semibold text-foreground">
+              {getApproverDisplay(action.approver_id).label}
+            </span>
+            <Badge variant="outline" className="text-xs px-2 py-0">
+              {getApproverDisplay(action.approver_id).department}
+            </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 truncate">
             {action.prediction.root_cause || "Risk analysis complete"}
@@ -100,6 +107,15 @@ export function ReviewCard({ action, status, error, onSend, onHold, index }: Rev
             className="overflow-hidden"
           >
             <div className="px-5 pb-5 space-y-4 border-t border-border pt-4">
+              <TwinIntelligencePanel prediction={action.prediction} />
+
+              {action.metadata?.llm_available === false && (
+                <div role="alert" className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  ⚠ Generated using fallback mode.
+                </div>
+              )}
+
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText className="w-3.5 h-3.5 text-muted-foreground" />
@@ -125,15 +141,19 @@ export function ReviewCard({ action, status, error, onSend, onHold, index }: Rev
                 />
               </div>
 
-              {action.prediction.root_cause && (
-                <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-medium text-amber-400">Risk Analysis</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{action.prediction.root_cause}</p>
-                  </div>
+              <div className="p-4 rounded-lg bg-card border border-border">
+                <div className="flex items-center gap-2 mb-3">
+                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                    What happens next
+                  </span>
                 </div>
-              )}
+                <ul className="space-y-2 text-sm text-muted-foreground ml-6 list-disc marker:text-border">
+                  <li>Nudge message is sent to the approver via Slack</li>
+                  <li>Portfolio momentum score is recalculated</li>
+                  <li>Behavioral twin logs actual delay time after resolution</li>
+                </ul>
+              </div>
 
               {status === "error" && (
                 <div role="alert" className="flex items-start gap-2.5 p-3 rounded-lg bg-destructive/5 border border-destructive/20">

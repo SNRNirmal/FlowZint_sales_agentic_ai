@@ -8,11 +8,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuthStore } from "@/store/useAuthStore"
 
-const DEMO_USER = {
-  id: "user-001",
+// Demo bypass — no real auth endpoint exists yet.
+// Only the display name is set; id/email/role are left null until a real
+// POST /auth/login endpoint is wired. Token is null (not a fabricated string).
+const DEMO_SESSION = {
+  id: "",
   name: "Sales Ops",
-  email: "demo@flowzint.com",
-  role: "admin",
+  email: "",
+  role: "",
 }
 
 export function LoginForm() {
@@ -20,7 +23,8 @@ export function LoginForm() {
   const login = useAuthStore((state) => state.login)
 
   const enter = () => {
-    login(DEMO_USER, "demo-session")
+    // No fabricated token — pass empty string until real auth is implemented.
+    login(DEMO_SESSION, "")
     router.push("/dashboard")
   }
 
@@ -45,12 +49,12 @@ export function LoginForm() {
         </CardHeader>
         <CardContent>
           <Button onClick={enter} className="w-full gap-2">
-            Enter as Sales Ops
+            Enter Workspace
             <ArrowRight className="w-4 h-4" />
           </Button>
         </CardContent>
         <CardFooter className="justify-center text-xs text-muted-foreground">
-          Demo mode — no credentials required.
+          Demo mode — connect a real auth endpoint to enable credentials.
         </CardFooter>
       </Card>
     </motion.div>

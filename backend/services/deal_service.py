@@ -29,6 +29,7 @@ import logging
 
 from sqlalchemy.orm import Session
 from langgraph.types import Command
+from typing import Callable
 
 from graphs.builder import build_graph
 from memory.checkpointer import thread_config
@@ -64,7 +65,7 @@ def ensure_graph_state(result) -> GraphState:
     )
 
 
-async def process_deal_via_graph(db: Session, deal: Deal) -> GraphState:
+async def process_deal_via_graph(db: Session, deal: Deal, progress_cb: Callable[[str], None] | None = None) -> GraphState:
     """Run the full Threshold pipeline for a new deal via the LangGraph graph.
 
     Parameters
@@ -96,8 +97,22 @@ async def process_deal_via_graph(db: Session, deal: Deal) -> GraphState:
         extra={"deal_id": deal.id, "thread_id": deal.id},
     )
 
-    graph = build_graph()
-    result = await graph.ainvoke(initial_state, config=config)
+    from debug_logger import dl
+    dl.log_step(5, "Starting LangGraph execution.", node="deal_service")
+    try:
+        graph = build_graph()
+        if progress_cb:
+            async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
+                for node_name in chunk.keys():
+                    progress_cb(node_name)
+            state_snapshot = await graph.aget_state(config)
+            result = state_snapshot.values
+        else:
+            result = await graph.ainvoke(initial_state, config=config)
+        dl.log_step(14, "Graph reached END state.", node="deal_service", output_keys=list(result.keys()) if isinstance(result, dict) else [])
+    except Exception as e:
+        dl.log_step(14, "Graph execution failed.", node="deal_service", exc=str(e))
+        raise
     # Normalize before the completion log so the counts below read from
     # the typed state, not a raw channel-values dict.
     final_state = ensure_graph_state(result)

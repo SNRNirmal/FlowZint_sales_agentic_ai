@@ -1,17 +1,17 @@
 import { z } from "zod"
-import { WebhookResponseSchema, type WebhookResponse } from "@/types/api"
+import { WebhookResultSchema, type WebhookResult } from "@/types/api"
 
 export const REVIEW_SESSION_KEY = "threshold.review.v1"
 
 // Only settled outcomes are persisted; in-flight states rehydrate as idle.
 const StoredStatusSchema = z.enum(["sent", "held"])
 const StoredSessionSchema = z.object({
-  result: WebhookResponseSchema,
+  result: WebhookResultSchema,
   statuses: z.record(z.string(), StoredStatusSchema),
 })
 
 export type StoredReviewSession = {
-  result: WebhookResponse
+  result: WebhookResult
   statuses: Record<string, "sent" | "held">
 }
 

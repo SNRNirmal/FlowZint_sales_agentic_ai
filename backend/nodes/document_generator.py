@@ -38,6 +38,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from config import settings
+
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
@@ -109,6 +111,8 @@ async def document_generator_node(state: GraphState, config: RunnableConfig) -> 
         - ``current_node``: "document_generator"
         - ``agent_outputs``: structured reasoning result
     """
+    from debug_logger import dl
+    dl.log_step(8, "Entering document_generator node.", node="document_generator", input_keys=["deal", "approvals", "behavioral_twins"])
     deal = state.deal
     approvals = state.approvals
     twins = state.behavioral_twins
@@ -144,21 +148,35 @@ async def document_generator_node(state: GraphState, config: RunnableConfig) -> 
             f"Draft the artifact in that exact style."
         )
 
+        print(f"[START] {approval.approver_id}")
+        import time
+        start = time.time()
         try:
             drafted: DraftedArtifact = await llm.ainvoke(
                 [("system", SYSTEM_PROMPT), ("user", user_prompt)]
             )
+            print(f"[END] {approval.approver_id} ({time.time() - start:.2f}s)")
             return approval.approver_id, drafted, None
         except Exception as exc:
-            logger.error(
-                "Document drafting failed — using fallback template",
+            print(f"[END] {approval.approver_id} FAILED ({time.time() - start:.2f}s) - {exc}")
+            logger.exception(
+                "LLM provider unavailable",
                 extra={
+                    "node": "document_generator",
                     "deal_id": deal.deal_id,
                     "approver_id": approval.approver_id,
-                    "error": str(exc),
                 },
             )
-            return approval.approver_id, _fallback_artifact(approval.approver_id, approval.department, deal), str(exc)
+            
+            if settings.ALLOW_LLM_FALLBACKS:
+                result = _fallback_artifact(approval.approver_id, approval.department, deal)
+                result.metadata = {
+                    "llm_available": False,
+                    "generated_by": "fallback",
+                }
+                return approval.approver_id, result, str(exc)
+            else:
+                raise RuntimeError(f"LLM unavailable in document_generator") from exc
 
     logger.info(
         "Drafting artifacts concurrently",
@@ -169,20 +187,17 @@ async def document_generator_node(state: GraphState, config: RunnableConfig) -> 
 
     artifacts: dict[str, str] = {}
     failed: list[str] = []
+    agent_metadata: dict[str, dict] = {}
 
     for i, item in enumerate(results):
         approver_id_for_error = approvals[i].approver_id
 
         if isinstance(item, Exception):
-            logger.error(
-                "Document drafting task raised an unhandled exception",
-                extra={"deal_id": deal.deal_id, "approver_id": approver_id_for_error, "error": str(item)},
-            )
-            failed.append(approver_id_for_error)
-            continue
+            raise RuntimeError("Parallel task failed in document_generator") from item
 
         approver_id, drafted, error = item
         artifacts[approver_id] = drafted.content
+        agent_metadata[approver_id] = drafted.metadata
         if error:
             failed.append(approver_id)
 
@@ -205,9 +220,10 @@ async def document_generator_node(state: GraphState, config: RunnableConfig) -> 
         extra={"deal_id": deal.deal_id, "artifacts_drafted": len(artifacts), "failed": len(failed)},
     )
 
+    dl.log_step(9, "Document generator completed successfully.", node="document_generator", output_keys=["artifacts", "audit_log", "agent_outputs"])
     return {
         "artifacts": artifacts,
         "audit_log": [audit_entry],
         "current_node": "document_generator",
-        "agent_outputs": {"document_generator": result.model_dump()},
+        "agent_outputs": agent_metadata,
     }

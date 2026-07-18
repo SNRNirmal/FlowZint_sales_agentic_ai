@@ -24,5 +24,6 @@ def init_db():
     import models.approval  # noqa
     import models.behavioral_twin  # noqa
     import models.learning_log  # noqa
+    import models.deal_job  # noqa  ← background pipeline tracking
 
     Base.metadata.create_all(bind=engine)

@@ -141,6 +141,12 @@ class ApprovalRule:
 # (lower number = reviewed first). The order here matches the logical
 # flow: financial viability → legal risk → security posture →
 # sourcing → regulatory → executive sign-off.
+#
+# Coupling note: approver_id strings here MUST match the approver_id keys
+# in behavioral_twins/seed_data.py BOOTSTRAP_APPROVERS. If you add or rename
+# an approver, update both files in lockstep — the twin retrieval node
+# looks up each approver_id in the behavioral_twins table, and a mismatch
+# produces a confidence=0.0 cold-start (Human Review bypass, no draft).
 APPROVAL_RULES: tuple[ApprovalRule, ...] = (
     ApprovalRule(
         department="Finance",
@@ -344,18 +350,4 @@ async def approval_detection_node(state: GraphState) -> dict:
             extra={"deal_id": deal.deal_id, "error": str(exc)},
             exc_info=True,
         )
-        # Return a minimal state update with the error recorded in
-        # the audit trail. Never crash the graph — let downstream
-        # nodes handle the empty approvals list gracefully.
-        return {
-            "approvals": [],
-            "audit_log": [
-                {
-                    "event": "approval_detection_error",
-                    "deal_id": deal.deal_id,
-                    "error": str(exc),
-                    "node": "approval_detection",
-                }
-            ],
-            "current_node": "approval_detection",
-        }
+        raise

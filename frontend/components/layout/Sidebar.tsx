@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  Layers,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { label: "Deals",            href: "/deals",      icon: Briefcase },
   { label: "Human Review",     href: "/review",     icon: ClipboardCheck },
   { label: "Behavioral Twins", href: "/twins",      icon: Brain },
+  { label: "Timeline",         href: "/timeline",   icon: Layers },
 ]
 
 interface SidebarProps {

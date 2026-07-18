@@ -151,16 +151,7 @@ async def behavioral_twin_retrieval_node(state: GraphState, config: RunnableConf
             approver_id_for_error = approvals[i].approver_id
 
             if isinstance(item, Exception):
-                logger.error(
-                    "Twin fetch raised an exception",
-                    extra={
-                        "deal_id": deal.deal_id,
-                        "approver_id": approver_id_for_error,
-                        "error": str(item),
-                    },
-                )
-                failed.append(approver_id_for_error)
-                continue
+                raise RuntimeError("Twin fetch failed in behavioral_twin_retrieval") from item
 
             approver_id, tool_result = item
 
@@ -216,17 +207,7 @@ async def behavioral_twin_retrieval_node(state: GraphState, config: RunnableConf
             extra={"deal_id": deal.deal_id, "error": str(exc)},
             exc_info=True,
         )
-        return {
-            "audit_log": [
-                {
-                    "event": "behavioral_twin_retrieval_error",
-                    "deal_id": deal.deal_id,
-                    "error": str(exc),
-                    "node": "behavioral_twin_retrieval",
-                }
-            ],
-            "current_node": "behavioral_twin_retrieval",
-        }
+        raise
     finally:
         if owns_session:
             db.close()

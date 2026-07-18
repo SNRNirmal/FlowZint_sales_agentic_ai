@@ -17,6 +17,7 @@ class DelayPrediction(BaseModel):
     expected_delay_days: float = Field(ge=0.0)
     root_cause: str
     confidence: float = Field(ge=0.0, le=1.0)
+    metadata: dict = Field(default_factory=dict)
 
 
 class DraftedArtifact(BaseModel):
@@ -25,6 +26,7 @@ class DraftedArtifact(BaseModel):
     content: str
     format_used: str
     approver_id: str
+    metadata: dict = Field(default_factory=dict)
 
 
 class DraftedNudge(BaseModel):
@@ -33,6 +35,7 @@ class DraftedNudge(BaseModel):
     message: str
     urgency: str = Field(pattern="^(low|normal|high)$")
     approver_id: str
+    metadata: dict = Field(default_factory=dict)
 
 
 class TwinConfidenceAssessment(BaseModel):

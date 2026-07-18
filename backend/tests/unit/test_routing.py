@@ -46,12 +46,12 @@ def test_approvals_continue_to_persistence():
 
 def test_approve_ends_pipeline():
     state = _state(latest_review=HumanReviewDecision(action="approve"))
-    assert route_after_human_review(state) == END
+    assert route_after_human_review(state) == "approval_tracking"
 
 
 def test_reject_ends_pipeline():
     state = _state(latest_review=HumanReviewDecision(action="reject"))
-    assert route_after_human_review(state) == END
+    assert route_after_human_review(state) == "rejection_handler"
 
 
 def test_request_changes_loops_back_to_document_generator():

@@ -1,1 +1,1 @@
-export type { RiskPrediction, DraftedAction, WebhookResponse, ResolvePayload } from "./api"
+export type { RiskPrediction, DraftedAction, WebhookResult, ResolvePayload } from "./api"
